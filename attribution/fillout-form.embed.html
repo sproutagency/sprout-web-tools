@@ -1,0 +1,59 @@
+<script>
+    try {
+        const attributionData = window.globalAttributionTracker?.getAttributionData();
+        
+        if (attributionData) {
+            document.write(`
+                <div style="width:100%;height:500px;" 
+                    data-fillout-id="siGJwva6PTus" 
+                    data-fillout-embed-type="standard" 
+                    data-fillout-inherit-parameters
+                    data-first_touch_source="${attributionData.firstTouch?.source || 'direct'}"
+                    data-first_touch_medium="${attributionData.firstTouch?.medium || 'organic'}"
+                    data-last_touch_source="${attributionData.lastTouch?.source || 'direct'}"
+                    data-last_touch_medium="${attributionData.lastTouch?.medium || 'organic'}"
+                    data-utm_campaign="${attributionData.lastTouch?.utmParameters?.campaign || ''}"
+                    data-utm_content="${attributionData.lastTouch?.utmParameters?.content || ''}"
+                    data-utm_term="${attributionData.lastTouch?.utmParameters?.term || ''}"
+                    data-touch_count="${attributionData.touchCount || 0}"
+                    data-landing_page="${attributionData.firstTouch?.landingPage || ''}"
+                    data-referrer="${attributionData.firstTouch?.referrer || ''}"
+                    data-conversion_page="${window.location.pathname}"
+                    data-full_conversion_url="${window.location.href}"
+                    data-journey_story="${attributionData.journeyStory || ''}"
+                    data-session_id="${attributionData.sessionData?.id || ''}"
+                    data-device_info="${encodeURIComponent(JSON.stringify(attributionData.deviceInfo || {}))}"
+                    data-timestamp="${new Date().toISOString()}"
+                    data-fillout-dynamic-resize 
+                    data-fillout-domain="forms.sproutagency.co">
+                </div>
+            `);
+            console.log('Attribution data added to form:', attributionData);
+        } else {
+            // Fallback if no attribution data
+            document.write(`
+                <div style="width:100%;height:500px;" 
+                    data-fillout-id="82zJyQTkzTus" 
+                    data-fillout-embed-type="standard" 
+                    data-fillout-inherit-parameters
+                    data-fillout-dynamic-resize 
+                    data-fillout-domain="forms.sproutagency.co">
+                </div>
+            `);
+            console.log('No attribution data available');
+        }
+    } catch (error) {
+        console.error('Error creating Fillout form with attribution:', error);
+        // Fallback
+        document.write(`
+            <div style="width:100%;height:500px;" 
+                data-fillout-id="siGJwva6PTus" 
+                data-fillout-embed-type="standard" 
+                data-fillout-inherit-parameters
+                data-fillout-dynamic-resize 
+                data-fillout-domain="forms.sproutagency.co">
+            </div>
+        `);
+    }
+    </script>
+    <script src="https://server.fillout.com/embed/v1/"></script>
