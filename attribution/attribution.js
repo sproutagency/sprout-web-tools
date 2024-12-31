@@ -8,8 +8,25 @@ class AttributionTracker {
         ...options
       };
   
-      this.paidMediums = ['ppc', 'cpc', 'paid_social', 'paid', '_ad', 'display', 'remarketing'];
-      this.organicMediums = ['organic', 'social', 'organic_social', 'social_network', 'social_media', 'sm'];
+      this.paidMediums = [
+        'cpc',           // Google Ads
+        'paid_search',   // Paid search general
+        'paid_social',   // Paid social media
+        'display',       // Display advertising
+        'ppc',          // Legacy term, keep for compatibility
+        'email',         // Email marketing
+        'affiliate',     // Affiliate marketing
+        'referral',      // Paid referral
+        'retargeting'    // Retargeting/remarketing
+      ];
+      this.organicMediums = [
+        'organic',         // Organic search
+        'organic_social',  // Organic social media
+        'referral',       // Organic referral
+        'email',          // Organic email
+        'direct',         // Direct traffic
+        'none'            // When no medium is specified
+      ];
       
       this.searchEngines = {
         'google': {
@@ -343,18 +360,27 @@ class AttributionTracker {
   
     determineMedium(utmMedium) {
       if (!utmMedium) {
-        return 'organic';
+        return 'none';
       }
       
-      if (this.paidMediums.some(medium => utmMedium.includes(medium))) {
-        return 'paid';
+      const medium = utmMedium.toLowerCase();
+      
+      // Check for exact matches first
+      if (this.paidMediums.includes(medium)) {
+        return medium;
       }
       
-      if (this.organicMediums.some(medium => utmMedium.includes(medium))) {
-        return 'organic';
+      if (this.organicMediums.includes(medium)) {
+        return medium;
       }
       
-      return 'organic';
+      // If no exact match, check for partial matches
+      if (this.paidMediums.some(paid => medium.includes(paid))) {
+        return medium;
+      }
+      
+      // Default to 'referral' if it's not matching any known patterns
+      return 'referral';
     }
   
     determineCampaignType(campaign) {
