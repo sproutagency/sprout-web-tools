@@ -2,7 +2,7 @@ class AttributionTester {
     constructor() {
         this.originalReferrer = document.referrer;
         this.originalURL = window.location.href;
-        this.originalPushState = window.history.pushState;
+        this.originalPathname = window.location.pathname;
     }
 
     // Simulate different traffic sources
@@ -78,15 +78,26 @@ class AttributionTester {
             configurable: true
         });
 
-        // Mock URL without using pushState
-        const newURL = window.location.origin + window.location.pathname + queryString;
+        // Mock URL and pathname
+        const newURL = window.location.origin + this.originalPathname + queryString;
+        const mockLocation = {
+            ...window.location,
+            href: newURL,
+            search: queryString,
+            pathname: this.originalPathname
+        };
+
+        // Create a proxy to handle any location access
+        const locationProxy = new Proxy(mockLocation, {
+            get: (target, prop) => {
+                return target[prop];
+            }
+        });
+
         Object.defineProperty(window, 'location', {
-            value: {
-                ...window.location,
-                href: newURL,
-                search: queryString
-            },
-            writable: true
+            value: locationProxy,
+            writable: true,
+            configurable: true
         });
     }
 
@@ -94,8 +105,13 @@ class AttributionTester {
         // Clear existing attribution data
         localStorage.removeItem('site_attribution');
         
-        // Reinitialize tracker
-        window.globalAttributionTracker = new AttributionTracker();
+        // Reinitialize tracker with test configuration
+        window.globalAttributionTracker = new AttributionTracker({
+            storageKey: 'site_attribution',
+            sessionDuration: 30 * 60 * 1000,
+            attributionWindow: 30 * 24 * 60 * 60 * 1000,
+            isTestMode: true // Add this flag to prevent certain initializations
+        });
         
         // Get attribution data
         const attributionData = window.globalAttributionTracker.getAttributionData();
@@ -124,13 +140,17 @@ class AttributionTester {
         });
 
         // Reset URL
+        const originalLocation = {
+            ...window.location,
+            href: this.originalURL,
+            search: new URL(this.originalURL).search,
+            pathname: this.originalPathname
+        };
+
         Object.defineProperty(window, 'location', {
-            value: {
-                ...window.location,
-                href: this.originalURL,
-                search: new URL(this.originalURL).search
-            },
-            writable: true
+            value: originalLocation,
+            writable: true,
+            configurable: true
         });
 
         // Clear storage
@@ -154,8 +174,8 @@ class AttributionTester {
     }
 }
 
-// Run tests when both scripts are loaded
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize tests after a small delay to ensure everything is loaded
+setTimeout(() => {
     const tester = new AttributionTester();
     
     // Run all predefined test scenarios
@@ -170,4 +190,4 @@ document.addEventListener('DOMContentLoaded', () => {
             campaign: 'summer_launch'
         }
     );
-}); 
+}, 100); 
