@@ -3,6 +3,13 @@ class AttributionTester {
         this.originalReferrer = document.referrer;
         this.originalURL = window.location.href;
         this.originalPathname = window.location.pathname;
+        
+        // Store original window.location methods
+        this.originalGetters = {
+            href: window.location.href,
+            search: window.location.search,
+            pathname: window.location.pathname
+        };
     }
 
     // Simulate different traffic sources
@@ -78,26 +85,37 @@ class AttributionTester {
             configurable: true
         });
 
-        // Mock URL and pathname
-        const newURL = window.location.origin + this.originalPathname + queryString;
-        const mockLocation = {
-            ...window.location,
+        // Create mock URL
+        const newURL = this.originalURL.split('?')[0] + queryString;
+        
+        // Store the mock values
+        this.mockedValues = {
             href: newURL,
             search: queryString,
             pathname: this.originalPathname
         };
 
-        // Create a proxy to handle any location access
-        const locationProxy = new Proxy(mockLocation, {
-            get: (target, prop) => {
-                return target[prop];
-            }
-        });
+        // Mock window.location getters
+        this.mockLocationGetters();
+    }
 
-        Object.defineProperty(window, 'location', {
-            value: locationProxy,
-            writable: true,
-            configurable: true
+    mockLocationGetters() {
+        // Mock individual properties instead of the entire location object
+        ['href', 'search', 'pathname'].forEach(prop => {
+            Object.defineProperty(window.location, prop, {
+                get: () => this.mockedValues[prop],
+                configurable: true
+            });
+        });
+    }
+
+    restoreLocationGetters() {
+        // Restore original getters
+        ['href', 'search', 'pathname'].forEach(prop => {
+            Object.defineProperty(window.location, prop, {
+                get: () => this.originalGetters[prop],
+                configurable: true
+            });
         });
     }
 
@@ -105,12 +123,12 @@ class AttributionTester {
         // Clear existing attribution data
         localStorage.removeItem('site_attribution');
         
-        // Reinitialize tracker with test configuration
+        // Reinitialize tracker
         window.globalAttributionTracker = new AttributionTracker({
             storageKey: 'site_attribution',
             sessionDuration: 30 * 60 * 1000,
             attributionWindow: 30 * 24 * 60 * 60 * 1000,
-            isTestMode: true // Add this flag to prevent certain initializations
+            isTestMode: true
         });
         
         // Get attribution data
@@ -139,19 +157,8 @@ class AttributionTester {
             configurable: true
         });
 
-        // Reset URL
-        const originalLocation = {
-            ...window.location,
-            href: this.originalURL,
-            search: new URL(this.originalURL).search,
-            pathname: this.originalPathname
-        };
-
-        Object.defineProperty(window, 'location', {
-            value: originalLocation,
-            writable: true,
-            configurable: true
-        });
+        // Restore original location getters
+        this.restoreLocationGetters();
 
         // Clear storage
         localStorage.removeItem('site_attribution');
@@ -174,20 +181,22 @@ class AttributionTester {
     }
 }
 
-// Initialize tests after a small delay to ensure everything is loaded
-setTimeout(() => {
-    const tester = new AttributionTester();
-    
-    // Run all predefined test scenarios
-    tester.testScenarios();
+// Wait for both scripts to load before running tests
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        const tester = new AttributionTester();
+        
+        // Run all predefined test scenarios
+        tester.testScenarios();
 
-    // Test custom scenario
-    tester.testCustomScenario(
-        'https://twitter.com', 
-        {
-            source: 'twitter',
-            medium: 'social',
-            campaign: 'summer_launch'
-        }
-    );
-}, 100); 
+        // Test custom scenario
+        tester.testCustomScenario(
+            'https://twitter.com', 
+            {
+                source: 'twitter',
+                medium: 'social',
+                campaign: 'summer_launch'
+            }
+        );
+    }, 100);
+}); 
