@@ -208,7 +208,7 @@ class AttributionTracker {
         landingPage: window.location.pathname,
         utmParameters: {
           ...utmParams,
-          term: utmParams.term || searchTerm || ''  // Use UTM term if available, otherwise use search term
+          term: utmParams.term || searchTerm || ''
         }
       };
     }
