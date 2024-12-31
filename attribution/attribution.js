@@ -117,12 +117,18 @@ class AttributionTracker {
         this.addPageToSession(window.location.pathname);
       });
   
-      // Monitor pushState
-      const originalPushState = history.pushState;
-      history.pushState = function() {
-        originalPushState.apply(this, arguments);
+      // Monitor pushState more safely
+      const originalPushState = window.history.pushState;
+      window.history.pushState = function() {
+        const result = originalPushState.apply(this, arguments);
+        window.dispatchEvent(new Event('pushstate'));
+        return result;
+      };
+  
+      // Listen for pushstate events
+      window.addEventListener('pushstate', () => {
         this.addPageToSession(window.location.pathname);
-      }.bind(this);
+      });
     }
   
     addPageToSession(pathname) {
@@ -421,4 +427,3 @@ class AttributionTracker {
           console.error('Error updating attribution:', error);
       }
   });
-  
