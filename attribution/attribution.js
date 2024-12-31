@@ -150,13 +150,21 @@ class AttributionTracker {
         this.storeTouches(updatedTouches);
   
         return {
-          firstTouch: updatedTouches[0],
-          lastTouch: updatedTouches[updatedTouches.length - 1],
-          allTouches: updatedTouches,
+          firstTouch: {
+            source: updatedTouches[0].source,
+            medium: updatedTouches[0].medium,
+            landingPage: updatedTouches[0].landingPage,
+            referrer: updatedTouches[0].referrer,
+            timestamp: updatedTouches[0].timestamp
+          },
+          lastTouch: {
+            source: updatedTouches[updatedTouches.length - 1].source,
+            medium: updatedTouches[updatedTouches.length - 1].medium,
+            utmParameters: updatedTouches[updatedTouches.length - 1].utmParameters,
+            timestamp: updatedTouches[updatedTouches.length - 1].timestamp
+          },
           touchCount: updatedTouches.length,
-          deviceInfo: this.getDeviceInfo(),
-          sessionData: this.getSessionData(),
-          journeyStory: this.getJourneyStory()
+          sessionId: this.generateSessionId()
         };
       } catch (error) {
         console.error('Error getting attribution data:', error);
@@ -377,13 +385,21 @@ class AttributionTracker {
   
     createEmptyAttribution() {
       return {
-        firstTouch: null,
-        lastTouch: null,
-        allTouches: [],
+        firstTouch: {
+          source: 'direct',
+          medium: 'organic',
+          landingPage: '',
+          referrer: '',
+          timestamp: new Date().toISOString()
+        },
+        lastTouch: {
+          source: 'direct',
+          medium: 'organic',
+          utmParameters: {},
+          timestamp: new Date().toISOString()
+        },
         touchCount: 0,
-        deviceInfo: this.getDeviceInfo(),
-        sessionData: this.getSessionData(),
-        journeyStory: ''
+        sessionId: this.generateSessionId()
       };
     }
   }
@@ -405,3 +421,4 @@ class AttributionTracker {
           console.error('Error updating attribution:', error);
       }
   });
+  
