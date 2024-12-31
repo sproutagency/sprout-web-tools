@@ -2,6 +2,7 @@ class AttributionTester {
     constructor() {
         this.originalReferrer = document.referrer;
         this.originalURL = window.location.href;
+        this.originalPushState = window.history.pushState;
     }
 
     // Simulate different traffic sources
@@ -77,9 +78,16 @@ class AttributionTester {
             configurable: true
         });
 
-        // Mock URL
+        // Mock URL without using pushState
         const newURL = window.location.origin + window.location.pathname + queryString;
-        window.history.pushState({}, '', newURL);
+        Object.defineProperty(window, 'location', {
+            value: {
+                ...window.location,
+                href: newURL,
+                search: queryString
+            },
+            writable: true
+        });
     }
 
     async runTest() {
@@ -92,32 +100,40 @@ class AttributionTester {
         // Get attribution data
         const attributionData = window.globalAttributionTracker.getAttributionData();
         
-        // Log results
-        console.log('First Touch:', {
-            source: attributionData.firstTouch?.source,
-            medium: attributionData.firstTouch?.medium,
-            campaign: attributionData.firstTouch?.utmParameters?.campaign
+        // Log results in a table format
+        console.log('Test Results:');
+        console.table({
+            'First Touch Source': attributionData.firstTouch?.source,
+            'First Touch Medium': attributionData.firstTouch?.medium,
+            'Last Touch Source': attributionData.lastTouch?.source,
+            'Last Touch Medium': attributionData.lastTouch?.medium,
+            'Campaign': attributionData.lastTouch?.utmParameters?.campaign,
+            'Content': attributionData.lastTouch?.utmParameters?.content,
+            'Term': attributionData.lastTouch?.utmParameters?.term
         });
-        
-        console.log('Last Touch:', {
-            source: attributionData.lastTouch?.source,
-            medium: attributionData.lastTouch?.medium,
-            campaign: attributionData.lastTouch?.utmParameters?.campaign
-        });
-        
-        console.log('Full Attribution Data:', attributionData);
         
         // Add small delay between tests
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     resetEnvironment() {
-        // Reset to original state
+        // Reset referrer
         Object.defineProperty(document, 'referrer', {
             get: () => this.originalReferrer,
             configurable: true
         });
-        window.history.pushState({}, '', this.originalURL);
+
+        // Reset URL
+        Object.defineProperty(window, 'location', {
+            value: {
+                ...window.location,
+                href: this.originalURL,
+                search: new URL(this.originalURL).search
+            },
+            writable: true
+        });
+
+        // Clear storage
         localStorage.removeItem('site_attribution');
     }
 
@@ -138,18 +154,20 @@ class AttributionTester {
     }
 }
 
-// Usage example:
-const tester = new AttributionTester();
+// Run tests when both scripts are loaded
+document.addEventListener('DOMContentLoaded', () => {
+    const tester = new AttributionTester();
+    
+    // Run all predefined test scenarios
+    tester.testScenarios();
 
-// Run all predefined test scenarios
-tester.testScenarios();
-
-// Or test a custom scenario
-tester.testCustomScenario(
-    'https://twitter.com', 
-    {
-        source: 'twitter',
-        medium: 'social',
-        campaign: 'summer_launch'
-    }
-); 
+    // Test custom scenario
+    tester.testCustomScenario(
+        'https://twitter.com', 
+        {
+            source: 'twitter',
+            medium: 'social',
+            campaign: 'summer_launch'
+        }
+    );
+}); 
