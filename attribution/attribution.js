@@ -398,6 +398,14 @@ class AttributionTracker {
           const referrerUrl = new URL(referrer);
           const referrerDomain = referrerUrl.hostname.toLowerCase();
           
+          // Check search engines first
+          for (const [engine, config] of Object.entries(this.searchEngines)) {
+            if (config.domains.some(domain => referrerDomain.includes(domain)) ||
+                config.patterns.some(pattern => pattern.test(referrerDomain))) {
+              return engine;
+            }
+          }
+          
           // Check local business platforms
           for (const [platform, config] of Object.entries(this.localBusinessPlatforms)) {
             if (config.domains.some(domain => referrerDomain.includes(domain)) ||
@@ -419,8 +427,8 @@ class AttributionTracker {
           
           return referrerDomain;
         } catch (e) {
-          console.error('Error parsing referrer:', e);
-          return 'invalid_referrer';
+          console.warn('Error parsing referrer:', e);
+          return 'unknown';
         }
       }
       
@@ -569,3 +577,4 @@ class AttributionTracker {
           console.error('Error updating attribution:', error);
       }
   });
+  
