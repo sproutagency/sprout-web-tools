@@ -198,16 +198,18 @@ class AttributionTracker {
       const urlParams = new URLSearchParams(window.location.search);
       const referrer = document.referrer;
       const utmParams = this.extractUtmParameters(urlParams);
+      const searchTerm = this.extractSearchTerm(referrer);
   
       return {
         source: this.determineSource(utmParams.source, referrer),
         medium: this.determineMedium(utmParams.medium),
         timestamp: new Date().toISOString(),
         referrer: referrer,
-        landingPage: window.location.pathname,  // Changed from href to pathname
-        utmParameters: utmParams,
-        campaignData: this.analyzeCampaignData(utmParams),
-        customParameters: this.extractCustomParameters(urlParams)
+        landingPage: window.location.pathname,
+        utmParameters: {
+          ...utmParams,
+          term: utmParams.term || searchTerm  // Use UTM term if available, otherwise use search term
+        }
       };
     }
   
