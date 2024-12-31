@@ -208,7 +208,7 @@ class AttributionTracker {
         landingPage: window.location.pathname,
         utmParameters: {
           ...utmParams,
-          term: utmParams.term || searchTerm  // Use UTM term if available, otherwise use search term
+          term: utmParams.term || searchTerm || ''  // Use UTM term if available, otherwise use search term
         }
       };
     }
@@ -435,6 +435,31 @@ class AttributionTracker {
         touchCount: 0,
         sessionId: this.generateSessionId()
       };
+    }
+  
+    extractSearchTerm(referrer) {
+      if (!referrer) return null;
+      
+      try {
+        const referrerUrl = new URL(referrer);
+        const referrerDomain = referrerUrl.hostname.toLowerCase();
+        
+        // Check each search engine
+        for (const [engine, config] of Object.entries(this.searchEngines)) {
+          if (config.domains.some(domain => referrerDomain.includes(domain)) ||
+              config.patterns.some(pattern => pattern.test(referrerDomain))) {
+            // Try each possible search parameter
+            for (const param of config.searchParams) {
+              const term = referrerUrl.searchParams.get(param);
+              if (term) return decodeURIComponent(term.toLowerCase());
+            }
+          }
+        }
+        return null;
+      } catch (e) {
+        console.error('Error extracting search term:', e);
+        return null;
+      }
     }
   }
   
