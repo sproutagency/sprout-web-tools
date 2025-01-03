@@ -416,7 +416,7 @@ class MarketingAttribution {
 }
 
 // Initialize global instance
-window.marketingAttribution = new MarketingAttribution();
+window.globalAttributionTracker = new MarketingAttribution();
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
