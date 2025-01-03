@@ -35,24 +35,32 @@ class MarketingAttribution {
     }
 
     initializeTracking() {
+        console.log('Initializing tracking...');
         const currentTouch = this.createTouch();
+        console.log('Current touch data:', currentTouch);
         const storedData = this.getStoredData();
+        console.log('Previously stored attribution data:', storedData);
 
         // Set first touch if it doesn't exist
         if (!storedData.firstTouch) {
+            console.log('Setting first touch attribution...');
             storedData.firstTouch = currentTouch;
         }
 
         // Update last touch based on priority and timing rules
         if (this.shouldUpdateLastTouch(currentTouch, storedData.lastTouch)) {
+            console.log('Updating last touch attribution...');
             storedData.lastTouch = currentTouch;
         }
 
         this.storeData(storedData);
+        console.log('Final stored attribution data:', this.getStoredData());
     }
 
     initializeSession() {
+        console.log('Initializing session...');
         let sessionData = this.getSessionData();
+        console.log('Current session data:', sessionData);
         if (!sessionData.pageViews) {
             sessionData = {
                 startTime: '2025-01-03T17:53:14+02:00',
