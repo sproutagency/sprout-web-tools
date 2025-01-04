@@ -262,13 +262,35 @@ class MarketingAttribution {
             return { source: 'google', medium: 'display' };
         }
 
-        // If there's no referrer, it's direct
-        if (!referrer) {
-            return { source: '(direct)', medium: '(none)' };
-        }
-
         // Process referrer for organic and other sources
         try {
+            if (!referrer) {
+                return { source: '(direct)', medium: '(none)' };
+            }
+
+            // Handle special protocols that indicate messaging apps or native applications
+            if (referrer.startsWith('message:') || 
+                referrer.startsWith('sms:') || 
+                referrer.startsWith('whatsapp:') ||
+                referrer.startsWith('telegram:') ||
+                referrer.startsWith('fb-messenger:') ||
+                referrer.startsWith('imessage:')) {
+                const appName = referrer.split(':')[0];
+                return { 
+                    source: appName, 
+                    medium: 'message'
+                };
+            }
+
+            // Handle native app schemes
+            if (!referrer.startsWith('http:') && !referrer.startsWith('https:')) {
+                const appScheme = referrer.split(':')[0];
+                return {
+                    source: appScheme,
+                    medium: 'app'
+                };
+            }
+
             const referrerUrl = new URL(referrer);
             const referrerDomain = referrerUrl.hostname.replace('www.', '');
             const searchParams = new URLSearchParams(referrerUrl.search);
