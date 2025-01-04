@@ -179,11 +179,11 @@ class MarketingAttribution {
 
         // For direct visits (no referrer and no campaign parameters),
         // we should explicitly set it as direct/(none)
-        const hasNoReferrer = !referrer;
+        const hasNoReferrer = !referrer || referrer.includes(window.location.hostname);
         const hasNoCampaign = !utmParams.source && !Object.values(clickIds).some(id => id);
         const hasNoBusinessProfile = !currentParams.get('pbid');
 
-        if (hasNoReferrer && hasNoCampaign && hasNoBusinessProfile) {
+        if ((hasNoReferrer || referrer === '') && hasNoCampaign && hasNoBusinessProfile) {
             attribution = {
                 source: '(direct)',
                 medium: '(none)'
@@ -192,7 +192,7 @@ class MarketingAttribution {
 
         // Create the touch
         const touch = {
-            timestamp: '2025-01-03T18:34:36+02:00',
+            timestamp: '2025-01-04T01:14:43+02:00',
             source: attribution.source,
             medium: attribution.medium,
             campaign: utmParams.campaign || null,
@@ -337,9 +337,16 @@ class MarketingAttribution {
 
     getAttributionData() {
         const data = this.getStoredData();
+        const sessionData = this.getSessionData();
+        const visitorData = this.getVisitorData();
+        
         return {
             firstTouch: data.firstTouch || null,
-            lastTouch: data.lastTouch || null
+            lastTouch: data.lastTouch || null,
+            sessionData: sessionData,
+            touchCount: visitorData.touchCount || 0,
+            visitCount: visitorData.visitCount || 0,
+            firstSeen: visitorData.firstSeen
         };
     }
 
