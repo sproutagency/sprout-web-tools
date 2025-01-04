@@ -234,21 +234,17 @@ class MarketingAttribution {
     }
 
     determineAttribution(referrer, utmParams, clickIds, currentUrl) {
-        // First check campaign parameters (UTM, click IDs)
+        // 1. UTM Parameters (Highest Priority)
+        // These are explicitly set by marketers and should always take precedence
         if (utmParams.source && utmParams.medium) {
             return {
-                source: utmParams.source,
-                medium: utmParams.medium
+                source: utmParams.source.toLowerCase(),
+                medium: utmParams.medium.toLowerCase()
             };
         }
 
-        // Check for Google Business Profile
-        const currentParams = new URLSearchParams(currentUrl.search);
-        if (currentParams.get('pbid')) {
-            return { source: 'google', medium: 'business_profile' };
-        }
-
-        // Check for paid click IDs
+        // 2. Paid Click IDs
+        // These indicate paid traffic and should take precedence over organic/referral
         if (clickIds.gclid) {
             return { source: 'google', medium: 'cpc' };
         }
@@ -258,89 +254,136 @@ class MarketingAttribution {
         if (clickIds.msclkid) {
             return { source: 'bing', medium: 'cpc' };
         }
+        if (clickIds.ttclid) {
+            return { source: 'tiktok', medium: 'paid_social' };
+        }
         if (clickIds.dclid) {
             return { source: 'google', medium: 'display' };
         }
 
-        // Process referrer for organic and other sources
+        // 3. Google Business Profile
+        // Check for Google Business Profile traffic
+        const currentParams = new URLSearchParams(currentUrl.search);
+        if (currentParams.get('pbid')) {
+            return { source: 'google', medium: 'business_profile' };
+        }
+
+        // 4. Check for messaging apps and native applications
+        // These need to be checked before URL parsing as they use custom protocols
+        if (referrer) {
+            // Known messaging app protocols
+            const messagingApps = {
+                'message:': 'message',
+                'sms:': 'sms',
+                'whatsapp:': 'whatsapp',
+                'telegram:': 'telegram',
+                'fb-messenger:': 'messenger',
+                'imessage:': 'imessage',
+                'messages:': 'messages'
+            };
+
+            for (const [protocol, source] of Object.entries(messagingApps)) {
+                if (referrer.toLowerCase().startsWith(protocol)) {
+                    return { source, medium: 'message' };
+                }
+            }
+
+            // Other app protocols (not http/https)
+            if (!referrer.toLowerCase().startsWith('http:') && 
+                !referrer.toLowerCase().startsWith('https:')) {
+                const appScheme = referrer.split(':')[0].toLowerCase();
+                return { source: appScheme, medium: 'app' };
+            }
+        }
+
+        // 5. Process referrer for organic and other sources
         try {
+            // No referrer means direct traffic
             if (!referrer) {
                 return { source: '(direct)', medium: '(none)' };
-            }
-
-            // Handle special protocols that indicate messaging apps or native applications
-            if (referrer.startsWith('message:') || 
-                referrer.startsWith('sms:') || 
-                referrer.startsWith('whatsapp:') ||
-                referrer.startsWith('telegram:') ||
-                referrer.startsWith('fb-messenger:') ||
-                referrer.startsWith('imessage:')) {
-                const appName = referrer.split(':')[0];
-                return { 
-                    source: appName, 
-                    medium: 'message'
-                };
-            }
-
-            // Handle native app schemes
-            if (!referrer.startsWith('http:') && !referrer.startsWith('https:')) {
-                const appScheme = referrer.split(':')[0];
-                return {
-                    source: appScheme,
-                    medium: 'app'
-                };
             }
 
             const referrerUrl = new URL(referrer);
             const referrerDomain = referrerUrl.hostname.replace('www.', '');
             const searchParams = new URLSearchParams(referrerUrl.search);
 
-            // Special case for Google properties
-            if (referrerDomain === 'google.com' || referrerDomain === 'business.google.com') {
-                if (referrerDomain === 'business.google.com') {
-                    return { source: 'google', medium: 'business_profile' };
-                }
-                if (searchParams.has('ludocid')) {
-                    return { source: 'google', medium: 'local' };
-                }
-                if (referrerUrl.pathname.startsWith('/maps')) {
-                    return { source: 'google', medium: 'maps' };
-                }
-                if (searchParams.has('kgmid')) {
-                    return { source: 'google', medium: 'knowledge_graph' };
-                }
-                return { source: 'google', medium: 'organic' };
+            // 6. Search Engines (Organic)
+            const searchEngines = {
+                'google.com': 'google',
+                'bing.com': 'bing',
+                'yahoo.com': 'yahoo',
+                'duckduckgo.com': 'duckduckgo',
+                'yandex.com': 'yandex',
+                'baidu.com': 'baidu'
+            };
+
+            if (searchEngines[referrerDomain]) {
+                return { 
+                    source: searchEngines[referrerDomain],
+                    medium: 'organic'
+                };
             }
 
-            // Check for social media
-            if (referrerDomain === 'facebook.com') {
-                if (referrerUrl.pathname.includes('/groups/')) {
-                    return { source: 'facebook', medium: 'group' };
+            // 7. Social Networks
+            const socialNetworks = {
+                'facebook.com': 'facebook',
+                'instagram.com': 'instagram',
+                'linkedin.com': 'linkedin',
+                'twitter.com': 'twitter',
+                'x.com': 'twitter',
+                't.co': 'twitter',
+                'tiktok.com': 'tiktok',
+                'pinterest.com': 'pinterest',
+                'reddit.com': 'reddit'
+            };
+
+            if (socialNetworks[referrerDomain]) {
+                const source = socialNetworks[referrerDomain];
+                
+                // Special cases for social networks
+                if (referrerDomain === 'linkedin.com' && referrerUrl.pathname.includes('/company/')) {
+                    return { source, medium: 'company' };
                 }
-                if (referrerUrl.pathname.includes('/marketplace/')) {
-                    return { source: 'facebook', medium: 'marketplace' };
+                if (referrerDomain === 'facebook.com') {
+                    if (referrerUrl.pathname.includes('/groups/')) {
+                        return { source, medium: 'group' };
+                    }
+                    if (referrerUrl.pathname.includes('/marketplace/')) {
+                        return { source, medium: 'marketplace' };
+                    }
                 }
-                return { source: 'facebook', medium: 'social' };
+                
+                return { source, medium: 'social' };
             }
 
-            if (referrerDomain === 'linkedin.com') {
-                if (referrerUrl.pathname.includes('/jobs/')) {
-                    return { source: 'linkedin', medium: 'jobs' };
-                }
-                if (referrerUrl.pathname.includes('/company/')) {
-                    return { source: 'linkedin', medium: 'company' };
-                }
-                return { source: 'linkedin', medium: 'social' };
+            // 8. Email Providers
+            const emailDomains = [
+                'mail.google.com',
+                'outlook.com',
+                'mail.yahoo.com',
+                'mail.proton.me'
+            ];
+            
+            if (emailDomains.includes(referrerDomain)) {
+                return { source: 'email', medium: 'email' };
             }
 
-            // For other referrers, use the domain as source and 'referral' as medium
+            // 9. Internal Traffic
+            // Don't count internal navigation as a referral
+            if (referrerDomain === window.location.hostname) {
+                return { source: '(direct)', medium: '(none)' };
+            }
+
+            // 10. Everything else is a referral
+            // Clean the domain to use as source
             return {
                 source: referrerDomain,
                 medium: 'referral'
             };
 
         } catch (e) {
-            // If URL parsing fails, return as direct
+            console.error('Error processing referrer:', e);
+            // If URL parsing fails, safest to mark as direct
             return { source: '(direct)', medium: '(none)' };
         }
     }
