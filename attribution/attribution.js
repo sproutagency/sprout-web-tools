@@ -8,6 +8,7 @@ class MarketingAttribution {
         this.STORAGE_KEY = 'attribution_data';
         this.SESSION_KEY = 'attribution_session';
         this.VISITOR_KEY = 'visitor_data';
+        this.SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
         this._mockData = mockData; // For testing purposes
         this.ATTRIBUTION_WINDOW = {
             PAID_SEARCH: 30 * 24 * 60 * 60 * 1000,    // 30 days for paid search
@@ -47,8 +48,11 @@ class MarketingAttribution {
             storedData.firstTouch = currentTouch;
         }
 
-        // Update last touch based on priority and timing rules
-        if (this.shouldUpdateLastTouch(currentTouch, storedData.lastTouch)) {
+        // Update last touch if:
+        // 1. It's a new session AND
+        // 2. The current touch has equal or higher priority
+        const isNewSession = this.initializeSession();
+        if (isNewSession && this.shouldUpdateLastTouch(currentTouch, storedData.lastTouch)) {
             console.log('Updating last touch attribution...');
             storedData.lastTouch = currentTouch;
         }
@@ -59,20 +63,22 @@ class MarketingAttribution {
 
     initializeSession() {
         console.log('Initializing session...');
+        const isNew = this.isNewSession();
         let sessionData = this.getSessionData();
         console.log('Current session data:', sessionData);
-        if (!sessionData.pageViews) {
+        
+        if (!sessionData.pageViews || isNew) {
             sessionData = {
-                startTime: '2025-01-03T17:53:14+02:00',
+                startTime: new Date().toISOString(),
                 pageViews: [{
                     path: window.location.pathname,
-                    timestamp: '2025-01-03T17:53:14+02:00'
+                    timestamp: new Date().toISOString()
                 }]
             };
         } else {
             sessionData.pageViews.push({
                 path: window.location.pathname,
-                timestamp: '2025-01-03T17:53:14+02:00'
+                timestamp: new Date().toISOString()
             });
         }
         localStorage.setItem(this.SESSION_KEY, JSON.stringify(sessionData));
@@ -81,15 +87,28 @@ class MarketingAttribution {
         let visitorData = this.getVisitorData();
         if (!visitorData.firstSeen) {
             visitorData = {
-                firstSeen: '2025-01-03T17:53:14+02:00',
+                firstSeen: new Date().toISOString(),
                 visitCount: 1,
                 touchCount: 1
             };
-        } else {
+        } else if (isNew) {
+            // Only increment counts on new sessions
             visitorData.visitCount++;
             visitorData.touchCount++;
         }
         localStorage.setItem(this.VISITOR_KEY, JSON.stringify(visitorData));
+        
+        return isNew;
+    }
+
+    isNewSession() {
+        const sessionData = this.getSessionData();
+        if (!sessionData.startTime) return true;
+        
+        const lastTime = new Date(sessionData.startTime).getTime();
+        const currentTime = new Date().getTime();
+        
+        return currentTime - lastTime > this.SESSION_TIMEOUT;
     }
 
     shouldUpdateLastTouch(currentTouch, lastTouch) {
@@ -192,7 +211,7 @@ class MarketingAttribution {
 
         // Create the touch
         const touch = {
-            timestamp: '2025-01-04T01:14:43+02:00',
+            timestamp: new Date().toISOString(),
             source: attribution.source,
             medium: attribution.medium,
             campaign: utmParams.campaign || null,
@@ -351,7 +370,7 @@ class MarketingAttribution {
     }
 
     calculateDaysSinceFirstTouch(firstTouchTime) {
-        const currentTime = new Date('2025-01-03T18:34:36+02:00').getTime();
+        const currentTime = new Date().getTime();
         const firstTime = new Date(firstTouchTime).getTime();
         return Math.max(0, Math.floor((currentTime - firstTime) / (1000 * 60 * 60 * 24)));
     }
