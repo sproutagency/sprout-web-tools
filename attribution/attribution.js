@@ -76,10 +76,17 @@ class MarketingAttribution {
                 }]
             };
         } else {
-            sessionData.pageViews.push({
-                path: window.location.pathname,
-                timestamp: new Date().toISOString()
-            });
+            // Check if this is a refresh (same path as last view)
+            const lastPageView = sessionData.pageViews[sessionData.pageViews.length - 1];
+            const isRefresh = lastPageView && lastPageView.path === window.location.pathname;
+            
+            if (!isRefresh) {
+                // Only add to session if it's a new page, not a refresh
+                sessionData.pageViews.push({
+                    path: window.location.pathname,
+                    timestamp: new Date().toISOString()
+                });
+            }
         }
         localStorage.setItem(this.SESSION_KEY, JSON.stringify(sessionData));
 
