@@ -234,148 +234,126 @@ class MarketingAttribution {
     }
 
     determineAttribution(referrer, utmParams, clickIds, currentUrl) {
-        // 1. UTM Parameters (Highest Priority)
-        // These are explicitly set by marketers and should always take precedence
+        // 1. Campaign Parameters (Highest Priority)
         if (utmParams.source && utmParams.medium) {
             return {
-                source: utmParams.source.toLowerCase(),
-                medium: utmParams.medium.toLowerCase()
+                source: utmParams.source.toLowerCase().trim(),
+                medium: utmParams.medium.toLowerCase().trim()
             };
         }
 
-        // 2. Paid Click IDs
-        // These indicate paid traffic and should take precedence over organic/referral
-        if (clickIds.gclid) {
-            return { source: 'google', medium: 'cpc' };
-        }
-        if (clickIds.fbclid) {
-            return { source: 'facebook', medium: 'paid_social' };
-        }
-        if (clickIds.msclkid) {
-            return { source: 'bing', medium: 'cpc' };
-        }
-        if (clickIds.ttclid) {
-            return { source: 'tiktok', medium: 'paid_social' };
-        }
-        if (clickIds.dclid) {
-            return { source: 'google', medium: 'display' };
+        // 2. Click IDs - Paid Traffic
+        const clickIdMapping = {
+            gclid: { source: 'google', medium: 'cpc' },
+            fbclid: { source: 'facebook', medium: 'paid_social' },
+            msclkid: { source: 'bing', medium: 'cpc' },
+            ttclid: { source: 'tiktok', medium: 'paid_social' },
+            dclid: { source: 'google', medium: 'display' },
+            li_fat_id: { source: 'linkedin', medium: 'paid_social' },
+            twclid: { source: 'twitter', medium: 'paid_social' },
+            igshid: { source: 'instagram', medium: 'paid_social' }
+        };
+
+        for (const [clickId, attribution] of Object.entries(clickIdMapping)) {
+            if (clickIds[clickId]) {
+                return attribution;
+            }
         }
 
         // 3. Google Business Profile
-        // Check for Google Business Profile traffic
         const currentParams = new URLSearchParams(currentUrl.search);
-        if (currentParams.get('pbid')) {
+        if (currentParams.get('pbid') || currentParams.get('ludocid')) {
             return { source: 'google', medium: 'business_profile' };
         }
 
-        // 4. Check for messaging apps and native applications
-        // These need to be checked before URL parsing as they use custom protocols
-        if (referrer) {
-            // Known messaging app protocols
-            const messagingApps = {
-                'message:': 'message',
-                'sms:': 'sms',
-                'whatsapp:': 'whatsapp',
-                'telegram:': 'telegram',
-                'fb-messenger:': 'messenger',
-                'imessage:': 'imessage',
-                'messages:': 'messages'
-            };
-
-            for (const [protocol, source] of Object.entries(messagingApps)) {
-                if (referrer.toLowerCase().startsWith(protocol)) {
-                    return { source, medium: 'message' };
-                }
-            }
-
-            // Other app protocols (not http/https)
-            if (!referrer.toLowerCase().startsWith('http:') && 
-                !referrer.toLowerCase().startsWith('https:')) {
-                const appScheme = referrer.split(':')[0].toLowerCase();
-                return { source: appScheme, medium: 'app' };
-            }
-        }
-
-        // 5. Process referrer for organic and other sources
+        // 4. Process Referrer
         try {
-            // No referrer means direct traffic
             if (!referrer) {
                 return { source: '(direct)', medium: '(none)' };
             }
 
             const referrerUrl = new URL(referrer);
             const referrerDomain = referrerUrl.hostname.replace('www.', '');
-            const searchParams = new URLSearchParams(referrerUrl.search);
 
-            // 6. Search Engines (Organic)
+            // 5. Search Engines
             const searchEngines = {
-                'google.com': 'google',
-                'bing.com': 'bing',
-                'yahoo.com': 'yahoo',
-                'duckduckgo.com': 'duckduckgo',
-                'yandex.com': 'yandex',
-                'baidu.com': 'baidu'
+                'google': ['google.com'],
+                'bing': ['bing.com'],
+                'yahoo': ['search.yahoo.com', 'yahoo.com']
             };
 
-            if (searchEngines[referrerDomain]) {
-                return { 
-                    source: searchEngines[referrerDomain],
-                    medium: 'organic'
-                };
+            for (const [engine, domains] of Object.entries(searchEngines)) {
+                if (domains.some(domain => referrerDomain.includes(domain))) {
+                    // Special case for Google Maps
+                    if (engine === 'google' && referrerUrl.pathname.startsWith('/maps')) {
+                        return { source: 'google', medium: 'maps' };
+                    }
+                    return { source: engine, medium: 'organic' };
+                }
             }
 
-            // 7. Social Networks
+            // 6. Social Networks
             const socialNetworks = {
-                'facebook.com': 'facebook',
-                'instagram.com': 'instagram',
-                'linkedin.com': 'linkedin',
-                'twitter.com': 'twitter',
-                'x.com': 'twitter',
-                't.co': 'twitter',
-                'tiktok.com': 'tiktok',
-                'pinterest.com': 'pinterest',
-                'reddit.com': 'reddit'
+                'facebook': {
+                    domains: ['facebook.com', 'fb.com'],
+                    paths: {
+                        '/groups/': 'group',
+                        '/marketplace/': 'marketplace'
+                    }
+                },
+                'instagram': {
+                    domains: ['instagram.com']
+                },
+                'linkedin': {
+                    domains: ['linkedin.com'],
+                    paths: {
+                        '/company/': 'company',
+                        '/jobs/': 'jobs'
+                    }
+                },
+                'twitter': {
+                    domains: ['twitter.com', 'x.com', 't.co']
+                },
+                'tiktok': {
+                    domains: ['tiktok.com']
+                },
+                'youtube': {
+                    domains: ['youtube.com', 'youtu.be']
+                }
             };
 
-            if (socialNetworks[referrerDomain]) {
-                const source = socialNetworks[referrerDomain];
-                
-                // Special cases for social networks
-                if (referrerDomain === 'linkedin.com' && referrerUrl.pathname.includes('/company/')) {
-                    return { source, medium: 'company' };
-                }
-                if (referrerDomain === 'facebook.com') {
-                    if (referrerUrl.pathname.includes('/groups/')) {
-                        return { source, medium: 'group' };
+            for (const [network, config] of Object.entries(socialNetworks)) {
+                if (config.domains.some(domain => referrerDomain.includes(domain))) {
+                    if (config.paths) {
+                        for (const [path, medium] of Object.entries(config.paths)) {
+                            if (referrerUrl.pathname.includes(path)) {
+                                return { source: network, medium };
+                            }
+                        }
                     }
-                    if (referrerUrl.pathname.includes('/marketplace/')) {
-                        return { source, medium: 'marketplace' };
-                    }
+                    return { source: network, medium: 'social' };
                 }
-                
-                return { source, medium: 'social' };
             }
 
-            // 8. Email Providers
+            // 7. Email Providers
             const emailDomains = [
                 'mail.google.com',
                 'outlook.com',
-                'mail.yahoo.com',
-                'mail.proton.me'
+                'outlook.live.com',
+                'outlook.office365.com',
+                'mail.yahoo.com'
             ];
-            
-            if (emailDomains.includes(referrerDomain)) {
+
+            if (emailDomains.some(domain => referrerDomain.includes(domain))) {
                 return { source: 'email', medium: 'email' };
             }
 
-            // 9. Internal Traffic
-            // Don't count internal navigation as a referral
+            // 8. Internal Traffic
             if (referrerDomain === window.location.hostname) {
                 return { source: '(direct)', medium: '(none)' };
             }
 
-            // 10. Everything else is a referral
-            // Clean the domain to use as source
+            // 9. Everything else is a referral
             return {
                 source: referrerDomain,
                 medium: 'referral'
@@ -383,7 +361,6 @@ class MarketingAttribution {
 
         } catch (e) {
             console.error('Error processing referrer:', e);
-            // If URL parsing fails, safest to mark as direct
             return { source: '(direct)', medium: '(none)' };
         }
     }
