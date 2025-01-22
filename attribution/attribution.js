@@ -1,8 +1,8 @@
-// attribution-engine-prod.js v2.6.2
+// attribution-engine-prod.js v2.6.4
 (function() {
     'use strict';
 
-    const VERSION = '2.6.2';
+    const VERSION = '2.6.4';
     const SAFE_CHARS = /[^a-zA-Z0-9-_@:/. \/]/g;
     const MAX_LENGTH = 100;
 
@@ -14,7 +14,7 @@
                 visitorKey: 'ae_v2_visitor',
                 sessionTimeout: 1800000,
                 dataTTL: 2592000000,
-                sessionConversionPage: null
+                conversionPage: null
             };
 
             this.standardMediums = new Proxy({
@@ -52,10 +52,10 @@
         }
 
         init() {
+            this.cleanURL();
             this.validateData();
             this.trackSession();
             this.recordTouchPoint();
-            this.cleanURL();
             this.emitReadyEvent();
         }
 
@@ -63,14 +63,6 @@
             const params = new URLSearchParams(location.search);
             ['fbclid', 'gclid', 'msclkid', 'utm_id'].forEach(p => params.delete(p));
             history.replaceState({}, '', `${location.pathname}?${params}`);
-        }
-
-        sanitizePath(path) {
-            const cleanPath = path
-                .replace(/^\/+/, '/')
-                .replace(/\/+/g, '/')
-                .replace(/\/$/, '');
-            return `/${this.sanitize(cleanPath.slice(1))}`.replace(/\/{2,}/g, '/');
         }
 
         validateData() {
@@ -87,21 +79,20 @@
                 (Date.now() - new Date(session.startTime).getTime()) > this.config.sessionTimeout;
 
             if (isNewSession) {
-                this.config.sessionConversionPage = location.pathname;
+                this.config.conversionPage = location.pathname;
                 this.updateSession({
                     startTime: new Date().toISOString(),
                     pageViews: [this.createPageView()]
                 });
                 this.incrementVisitorCount();
-            } else {
-                this.config.sessionConversionPage = location.pathname;
-                if (session.pageViews) {
-                    const lastPath = session.pageViews[session.pageViews.length - 1].path;
-                    if (lastPath !== location.pathname) {
-                        session.pageViews.push(this.createPageView());
-                        this.updateSession(session);
-                    }
+            } else if (session.pageViews) {
+                const lastPath = session.pageViews[session.pageViews.length - 1].path;
+                if (lastPath !== location.pathname) {
+                    session.pageViews.push(this.createPageView());
+                    this.updateSession(session);
                 }
+                // Critical Fix: Update conversion page on every pageview
+                this.config.conversionPage = location.pathname;
             }
         }
 
@@ -188,7 +179,7 @@
         }
 
         getDeviceType() {
-            return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
+            return /Mobile|Android|iPhone/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
         }
 
         isHigherPriority(current, previous) {
@@ -207,6 +198,15 @@
 
         sanitize(value) {
             return String(value || '').replace(SAFE_CHARS, '').substring(0, MAX_LENGTH);
+        }
+
+        sanitizePath(path) {
+            // Fixed path handling
+            const cleanPath = path
+                .replace(/^\/+/, '/')  // Preserve leading slash
+                .replace(/\/+/g, '/')   // Collapse internal slashes
+                .replace(/\/$/, '');    // Remove trailing slash
+            return `/${this.sanitize(cleanPath.slice(1))}`;
         }
 
         getStorageData() {
@@ -250,8 +250,7 @@
                 ...this.getStorageData(),
                 sessionData: this.getSessionData(),
                 visitorData: this.getVisitorData(),
-                conversionPage: location.pathname,
-                sessionStartPage: this.config.sessionConversionPage,
+                conversionPage: this.config.conversionPage || location.pathname, // Fallback fix
                 daysToConvert: this.calculateDaysSinceFirstTouch()
             };
 
