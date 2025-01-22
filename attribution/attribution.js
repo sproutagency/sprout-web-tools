@@ -1,9 +1,9 @@
-// attribution-engine.js
+// attribution-engine-prod.js
 (function() {
     'use strict';
 
-    const VERSION = '2.5.0';
-    const SAFE_CHARS = /[^a-zA-Z0-9-_@:/. ]/g;
+    const VERSION = '2.6.0';
+    const SAFE_CHARS = /[^a-zA-Z0-9-_@:/. \/]/g;
     const MAX_LENGTH = 100;
 
     class AttributionEngine {
@@ -12,12 +12,12 @@
                 storageKey: 'ae_v2_data',
                 sessionKey: 'ae_v2_session',
                 visitorKey: 'ae_v2_visitor',
-                sessionTimeout: 1800000, // 30 minutes
-                dataTTL: 2592000000, // 30 days
+                sessionTimeout: 1800000,
+                dataTTL: 2592000000,
                 conversionPage: null
             };
 
-            this.standardMediums = this.createStandardMap({
+            this.standardMediums = new Proxy({
                 'cpc': 'paid_search',
                 'ppc': 'paid_search',
                 'paid': 'paid_search',
@@ -26,9 +26,14 @@
                 'email': 'email',
                 'referral': 'referral',
                 'none': '(none)'
+            }, {
+                get: (target, prop) => {
+                    const key = String(prop).toLowerCase().replace(/[^a-z0-9]/g, '');
+                    return target[key] || this.sanitize(prop);
+                }
             });
 
-            this.standardSources = this.createStandardMap({
+            this.standardSources = new Proxy({
                 'google': 'google',
                 'bing': 'bing',
                 'facebook': 'facebook',
@@ -36,6 +41,11 @@
                 'linkedin': 'linkedin',
                 'twitter': 'twitter',
                 'direct': '(direct)'
+            }, {
+                get: (target, prop) => {
+                    const key = String(prop).toLowerCase().replace(/[^a-z0-9]/g, '');
+                    return target[key] || this.sanitize(prop);
+                }
             });
 
             this.init();
@@ -47,15 +57,6 @@
             this.trackSession();
             this.recordTouchPoint();
             this.emitReadyEvent();
-        }
-
-        createStandardMap(mappings) {
-            return new Proxy(mappings, {
-                get: (target, prop) => {
-                    const key = String(prop).toLowerCase().replace(/[^a-z0-9]/g, '');
-                    return target[key] || this.sanitize(prop);
-                }
-            });
         }
 
         cleanURL() {
@@ -198,10 +199,12 @@
         }
 
         sanitizePath(path) {
-            return this.sanitize(path).replace(/\/+/g, '-');
+            const cleanPath = path
+                .replace(/^\/+|\/+$/g, '')
+                .replace(/\/+/g, '/');
+            return `/${this.sanitize(cleanPath)}`;
         }
 
-        // Storage handlers
         getStorageData() {
             try {
                 return JSON.parse(localStorage.getItem(this.config.storageKey)) || {};
@@ -260,7 +263,6 @@
         }
     }
 
-    // Initialize with error protection
     try {
         window.globalAttributionTracker = new AttributionEngine();
     } catch (error) {
