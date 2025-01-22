@@ -1,8 +1,8 @@
-// attribution-engine-prod.js
+// attribution-engine-prod.js v2.6.1
 (function() {
     'use strict';
 
-    const VERSION = '2.6.0';
+    const VERSION = '2.6.1';  // ← Version updated
     const SAFE_CHARS = /[^a-zA-Z0-9-_@:/. \/]/g;
     const MAX_LENGTH = 100;
 
@@ -14,8 +14,15 @@
                 visitorKey: 'ae_v2_visitor',
                 sessionTimeout: 1800000,
                 dataTTL: 2592000000,
-                conversionPage: null
+                _conversionPage: null  // ← Private property
             };
+
+            // Added conversion page getter with fallback
+            Object.defineProperty(this.config, 'conversionPage', {
+                get: () => this.config._conversionPage || location.pathname,
+                set: (value) => { this.config._conversionPage = value; },
+                enumerable: true
+            });
 
             this.standardMediums = new Proxy({
                 'cpc': 'paid_search',
@@ -52,10 +59,10 @@
         }
 
         init() {
-            this.cleanURL();
             this.validateData();
             this.trackSession();
             this.recordTouchPoint();
+            this.cleanURL();  // ← Moved after touchpoint recording
             this.emitReadyEvent();
         }
 
@@ -65,6 +72,22 @@
             history.replaceState({}, '', `${location.pathname}?${params}`);
         }
 
+        // Updated path sanitization
+        sanitizePath(path) {
+            const cleanPath = path
+                .replace(/\/+/g, '/')  // Collapse multiple slashes
+                .replace(/\/$/, '');   // Remove trailing slash only
+            return `/${this.sanitize(cleanPath.slice(1))}`;
+        }
+
+        // Enhanced device detection
+        getDeviceType() {
+            return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) 
+                ? 'mobile' 
+                : 'desktop';
+        }
+
+        // Rest of the methods remain the same but are included for completeness
         validateData() {
             const data = this.getStorageData();
             if (data.expiry && Date.now() > data.expiry) {
@@ -176,10 +199,6 @@
             }
         }
 
-        getDeviceType() {
-            return /Mobile|Android|iPhone/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
-        }
-
         isHigherPriority(current, previous) {
             if (!previous) return true;
             const priority = { 'paid_search':1, 'paid_social':2, 'organic_social':3, 'referral':4 };
@@ -196,13 +215,6 @@
 
         sanitize(value) {
             return String(value || '').replace(SAFE_CHARS, '').substring(0, MAX_LENGTH);
-        }
-
-        sanitizePath(path) {
-            const cleanPath = path
-                .replace(/^\/+|\/+$/g, '')
-                .replace(/\/+/g, '/');
-            return `/${this.sanitize(cleanPath)}`;
         }
 
         getStorageData() {
