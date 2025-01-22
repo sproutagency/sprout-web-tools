@@ -1,10 +1,8 @@
-// attribution-engine-prod.js v2.6.4
+// attribution-engine-prod.js v2.6.5
 (function() {
     'use strict';
 
-    const VERSION = '2.6.4';
-    const SAFE_CHARS = /[^a-zA-Z0-9-_@:/. \/]/g;
-    const MAX_LENGTH = 100;
+    const VERSION = '2.6.5';
 
     class AttributionEngine {
         constructor() {
@@ -28,8 +26,8 @@
                 'none': '(none)'
             }, {
                 get: (target, prop) => {
-                    const key = String(prop).toLowerCase().replace(/[^a-z0-9]/g, '');
-                    return target[key] || this.sanitize(prop);
+                    const key = String(prop).toLowerCase();
+                    return target[key] || prop;
                 }
             });
 
@@ -43,14 +41,15 @@
                 'direct': '(direct)'
             }, {
                 get: (target, prop) => {
-                    const key = String(prop).toLowerCase().replace(/[^a-z0-9]/g, '');
-                    return target[key] || this.sanitize(prop);
+                    const key = String(prop).toLowerCase();
+                    return target[key] || prop;
                 }
             });
 
             this.init();
         }
 
+        // KEEP ALL ORIGINAL METHODS BELOW THIS LINE
         init() {
             this.cleanURL();
             this.validateData();
@@ -91,14 +90,13 @@
                     session.pageViews.push(this.createPageView());
                     this.updateSession(session);
                 }
-                // Critical Fix: Update conversion page on every pageview
                 this.config.conversionPage = location.pathname;
             }
         }
 
         createPageView() {
             return {
-                path: this.sanitizePath(location.pathname),
+                path: location.pathname,
                 timestamp: new Date().toISOString()
             };
         }
@@ -124,12 +122,12 @@
                 timestamp: new Date().toISOString(),
                 source: this.standardSources[this.getSource()],
                 medium: this.standardMediums[this.getMedium()],
-                campaign: this.sanitize(new URLSearchParams(location.search).get('utm_campaign')),
-                content: this.sanitize(new URLSearchParams(location.search).get('utm_content')),
-                term: this.sanitize(new URLSearchParams(location.search).get('utm_term')),
+                campaign: new URLSearchParams(location.search).get('utm_campaign') || '',
+                content: new URLSearchParams(location.search).get('utm_content') || '',
+                term: new URLSearchParams(location.search).get('utm_term') || '',
                 device: this.getDeviceType(),
                 referrer: this.getReferrerSource(),
-                landingPage: this.sanitizePath(location.pathname),
+                landingPage: location.pathname,
                 formattedDate: new Date().toLocaleDateString('en-US', {
                     year: 'numeric',
                     month: 'short',
@@ -171,7 +169,7 @@
         getReferrerSource() {
             try {
                 return document.referrer ? 
-                    this.sanitize(new URL(document.referrer).hostname) : 
+                    new URL(document.referrer).hostname : 
                     '(direct)';
             } catch {
                 return '(direct)';
@@ -196,18 +194,7 @@
             localStorage.setItem(this.config.visitorKey, JSON.stringify(visitor));
         }
 
-        sanitize(value) {
-            return String(value || '').replace(SAFE_CHARS, '').substring(0, MAX_LENGTH);
-        }
-
-        sanitizePath(path) {
-            // Fixed path handling
-            const cleanPath = path
-                .replace(/^\/+/, '/')  // Preserve leading slash
-                .replace(/\/+/g, '/')   // Collapse internal slashes
-                .replace(/\/$/, '');    // Remove trailing slash
-            return `/${this.sanitize(cleanPath.slice(1))}`;
-        }
+        // REMOVED: sanitize() and sanitizePath()
 
         getStorageData() {
             try {
@@ -250,7 +237,7 @@
                 ...this.getStorageData(),
                 sessionData: this.getSessionData(),
                 visitorData: this.getVisitorData(),
-                conversionPage: this.config.conversionPage || location.pathname, // Fallback fix
+                conversionPage: this.config.conversionPage || location.pathname,
                 daysToConvert: this.calculateDaysSinceFirstTouch()
             };
 
