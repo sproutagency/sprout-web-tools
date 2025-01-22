@@ -1,8 +1,8 @@
-// attribution-engine-prod.js v2.6.1
+// attribution-engine-prod.js v2.6.2
 (function() {
     'use strict';
 
-    const VERSION = '2.6.1';  // ← Version updated
+    const VERSION = '2.6.2';
     const SAFE_CHARS = /[^a-zA-Z0-9-_@:/. \/]/g;
     const MAX_LENGTH = 100;
 
@@ -14,15 +14,8 @@
                 visitorKey: 'ae_v2_visitor',
                 sessionTimeout: 1800000,
                 dataTTL: 2592000000,
-                _conversionPage: null  // ← Private property
+                sessionConversionPage: null
             };
-
-            // Added conversion page getter with fallback
-            Object.defineProperty(this.config, 'conversionPage', {
-                get: () => this.config._conversionPage || location.pathname,
-                set: (value) => { this.config._conversionPage = value; },
-                enumerable: true
-            });
 
             this.standardMediums = new Proxy({
                 'cpc': 'paid_search',
@@ -62,7 +55,7 @@
             this.validateData();
             this.trackSession();
             this.recordTouchPoint();
-            this.cleanURL();  // ← Moved after touchpoint recording
+            this.cleanURL();
             this.emitReadyEvent();
         }
 
@@ -72,22 +65,14 @@
             history.replaceState({}, '', `${location.pathname}?${params}`);
         }
 
-        // Updated path sanitization
         sanitizePath(path) {
             const cleanPath = path
-                .replace(/\/+/g, '/')  // Collapse multiple slashes
-                .replace(/\/$/, '');   // Remove trailing slash only
-            return `/${this.sanitize(cleanPath.slice(1))}`;
+                .replace(/^\/+/, '/')
+                .replace(/\/+/g, '/')
+                .replace(/\/$/, '');
+            return `/${this.sanitize(cleanPath.slice(1))}`.replace(/\/{2,}/g, '/');
         }
 
-        // Enhanced device detection
-        getDeviceType() {
-            return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) 
-                ? 'mobile' 
-                : 'desktop';
-        }
-
-        // Rest of the methods remain the same but are included for completeness
         validateData() {
             const data = this.getStorageData();
             if (data.expiry && Date.now() > data.expiry) {
@@ -102,17 +87,20 @@
                 (Date.now() - new Date(session.startTime).getTime()) > this.config.sessionTimeout;
 
             if (isNewSession) {
-                this.config.conversionPage = location.pathname;
+                this.config.sessionConversionPage = location.pathname;
                 this.updateSession({
                     startTime: new Date().toISOString(),
                     pageViews: [this.createPageView()]
                 });
                 this.incrementVisitorCount();
-            } else if (session.pageViews) {
-                const lastPath = session.pageViews[session.pageViews.length - 1].path;
-                if (lastPath !== location.pathname) {
-                    session.pageViews.push(this.createPageView());
-                    this.updateSession(session);
+            } else {
+                this.config.sessionConversionPage = location.pathname;
+                if (session.pageViews) {
+                    const lastPath = session.pageViews[session.pageViews.length - 1].path;
+                    if (lastPath !== location.pathname) {
+                        session.pageViews.push(this.createPageView());
+                        this.updateSession(session);
+                    }
                 }
             }
         }
@@ -199,6 +187,10 @@
             }
         }
 
+        getDeviceType() {
+            return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
+        }
+
         isHigherPriority(current, previous) {
             if (!previous) return true;
             const priority = { 'paid_search':1, 'paid_social':2, 'organic_social':3, 'referral':4 };
@@ -258,7 +250,8 @@
                 ...this.getStorageData(),
                 sessionData: this.getSessionData(),
                 visitorData: this.getVisitorData(),
-                conversionPage: this.config.conversionPage,
+                conversionPage: location.pathname,
+                sessionStartPage: this.config.sessionConversionPage,
                 daysToConvert: this.calculateDaysSinceFirstTouch()
             };
 
