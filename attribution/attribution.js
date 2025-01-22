@@ -460,7 +460,7 @@ class MarketingAttribution {
     }
 
     getStoredData() {
-        return this.safeGetItem(this.STORAGE_KEY);
+        return this.safeGetItem(this.STORAGE_KEY) || {};
     }
 
     storeData(data) {
@@ -468,25 +468,25 @@ class MarketingAttribution {
     }
 
     getSessionData() {
-        return this.safeGetItem(this.SESSION_KEY);
+        return this.safeGetItem(this.SESSION_KEY) || {};
     }
 
     getVisitorData() {
-        return this.safeGetItem(this.VISITOR_KEY);
+        return this.safeGetItem(this.VISITOR_KEY) || {};
     }
 
     getAttributionData() {
-        const data = this.getStoredData();
-        const sessionData = this.getSessionData();
-        const visitorData = this.getVisitorData();
+        const data = this.getStoredData() || {};
+        const sessionData = this.getSessionData() || {};
+        const visitorData = this.getVisitorData() || {};
         
         return {
             firstTouch: data.firstTouch || null,
             lastTouch: data.lastTouch || null,
-            sessionData: sessionData,
+            sessionData: sessionData || {},
             touchCount: visitorData.touchCount || 0,
             visitCount: visitorData.visitCount || 0,
-            firstSeen: visitorData.firstSeen
+            firstSeen: visitorData.firstSeen || null
         };
     }
 
@@ -575,8 +575,8 @@ class MarketingAttribution {
     cleanupOldData() {
         try {
             // Clean up old sessions
-            const sessionData = this.getSessionData();
-            if (sessionData.startTime) {
+            const sessionData = this.getSessionData() || {};
+            if (sessionData?.startTime) {
                 const sessionAge = Date.now() - new Date(sessionData.startTime).getTime();
                 if (sessionAge > this.MAX_SESSION_AGE) {
                     localStorage.removeItem(this.SESSION_KEY);
@@ -584,7 +584,7 @@ class MarketingAttribution {
             }
 
             // Limit pageviews
-            if (sessionData.pageViews && sessionData.pageViews.length > this.MAX_PAGEVIEWS) {
+            if (sessionData?.pageViews && sessionData.pageViews.length > this.MAX_PAGEVIEWS) {
                 sessionData.pageViews = sessionData.pageViews.slice(-this.MAX_PAGEVIEWS);
                 this.safeSetItem(this.SESSION_KEY, sessionData);
             }
