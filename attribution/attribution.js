@@ -100,7 +100,7 @@ class MarketingAttribution {
         console.log('Initializing tracking...');
         const currentTouch = this.createTouch();
         console.log('Current touch data:', currentTouch);
-        const storedData = this.getStoredData();
+        const storedData = this.getStoredData() || {}; 
         console.log('Previously stored attribution data:', storedData);
 
         // Set first touch if it doesn't exist
@@ -615,14 +615,14 @@ class MarketingAttribution {
     }
 
     safeGetItem(key) {
-        if (!this._storageAvailable) return null;
+        if (!this._storageAvailable) return {};
         
         try {
             const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : null;
+            return item ? JSON.parse(item) : {};  
         } catch (e) {
             console.warn('Error reading from storage:', e);
-            return null;
+            return {};  
         }
     }
 
