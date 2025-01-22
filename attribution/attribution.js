@@ -1,5 +1,5 @@
 /**
- * Core Marketing Attribution Script
+ * Core Marketing Attribution Script v1
  * Tracks first and last touch attribution data
  */
 
