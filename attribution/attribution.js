@@ -635,6 +635,23 @@ class MarketingAttribution {
         return data;
     }
 
+    getVisitorData() {
+        const data = this.safeGetItem(this.VISITOR_KEY);
+        if (!data.firstSeen) {
+            data.firstSeen = new Date().toISOString();
+        }
+        if (!data.visitCount) {
+            data.visitCount = 1;
+        }
+        if (!data.touchCount) {
+            data.touchCount = 1;
+        } else {
+            data.touchCount++;
+        }
+        this.safeSetItem(this.VISITOR_KEY, data);
+        return data;
+    }
+
     safeGetItem(key) {
         if (!this._storageAvailable) return {};
         
