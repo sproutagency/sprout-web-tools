@@ -348,13 +348,36 @@ class MarketingAttribution {
         const sessionData = this.getSessionData() || {};
         const visitorData = this.getVisitorData() || {};
         
+        // Return a cleaner, more focused data structure
         return {
-            firstTouch: data.firstTouch || null,
-            lastTouch: data.lastTouch || null,
-            sessionData: sessionData || {},
-            touchCount: visitorData.touchCount || 0,
-            visitCount: visitorData.visitCount || 0,
-            firstSeen: visitorData.firstSeen || null
+            firstTouch: {
+                source: data.firstTouch?.source || '(direct)',
+                medium: data.firstTouch?.medium || '(none)',
+                campaign: data.firstTouch?.campaign || null,
+                landing_page: data.firstTouch?.landing_page || null,
+                timestamp: data.firstTouch?.timestamp || null,
+                device_type: data.firstTouch?.device_type || null,
+                click_id: data.firstTouch?.click_id || null
+            },
+            lastTouch: {
+                source: data.lastTouch?.source || '(direct)',
+                medium: data.lastTouch?.medium || '(none)',
+                campaign: data.lastTouch?.campaign || null,
+                landing_page: data.lastTouch?.landing_page || null,
+                timestamp: data.lastTouch?.timestamp || null,
+                device_type: data.lastTouch?.device_type || null,
+                click_id: data.lastTouch?.click_id || null
+            },
+            metrics: {
+                touchCount: visitorData.touchCount || 1,
+                visitCount: visitorData.visitCount || 1,
+                firstSeen: visitorData.firstSeen || null,
+                daysToConvert: this.calculateDaysSinceFirstTouch(data.firstTouch?.timestamp) || 0
+            },
+            currentSession: {
+                startTime: sessionData.startTime || null,
+                pageViews: sessionData.pageViews || []
+            }
         };
     }
 
