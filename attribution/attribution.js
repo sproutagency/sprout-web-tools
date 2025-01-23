@@ -545,51 +545,40 @@ class MarketingAttribution {
     }
 
     createTouch() {
-        // Use mock data for testing if available
+        // Get current URL and params
         const currentUrl = this._mockData?.currentUrl || new URL(window.location.href);
+        const urlParams = this._mockData?.urlParams || new URLSearchParams(window.location.search);
         const referrer = this._mockData?.referrer || document.referrer;
-        
-        // Get UTM parameters from mock data or current URL
-        const currentParams = this._mockData?.urlParams || new URLSearchParams(window.location.search);
-
-        // Get UTM parameters
-        const utmParams = this.validateUtmParams(currentParams);
-
-        // Get click IDs
-        const clickIds = {
-            gclid: currentParams.get('gclid'),
-            fbclid: currentParams.get('fbclid'),
-            msclkid: currentParams.get('msclkid'),
-            dclid: currentParams.get('dclid')
-        };
-
-        // Get the landing page path without query parameters
         const landingPath = currentUrl.pathname;
 
-        // Determine source and medium
-        let attribution = this.determineAttribution(referrer, utmParams, clickIds, currentUrl);
+        // Extract UTM parameters
+        const utmParams = {
+            source: urlParams.get('utm_source'),
+            medium: urlParams.get('utm_medium'),
+            campaign: urlParams.get('utm_campaign'),
+            content: urlParams.get('utm_content'),
+            term: urlParams.get('utm_term')
+        };
 
-        // For direct visits (no referrer and no campaign parameters),
-        // we should explicitly set it as direct/(none)
-        const hasNoReferrer = !referrer || referrer.includes(window.location.hostname);
-        const hasNoCampaign = !utmParams.source && !Object.values(clickIds).some(id => id);
-        const hasNoBusinessProfile = !currentParams.get('pbid');
-
-        if ((hasNoReferrer || referrer === '') && hasNoCampaign && hasNoBusinessProfile) {
-            attribution = {
-                source: '(direct)',
-                medium: '(none)'
-            };
-        }
+        // Extract click IDs
+        const clickIds = {
+            gclid: urlParams.get('gclid'),
+            fbclid: urlParams.get('fbclid'),
+            msclkid: urlParams.get('msclkid'),
+            dclid: urlParams.get('dclid')
+        };
 
         // Find the first non-null click ID value
         const clickId = Object.entries(clickIds).find(([_, value]) => value)?.[1] || null;
 
+        // Determine attribution
+        const { source, medium } = this.determineAttribution(referrer, utmParams, clickIds, currentUrl);
+
         // Create the touch
         const touch = {
             timestamp: new Date().toISOString(),
-            source: attribution.source,
-            medium: attribution.medium,
+            source: source,
+            medium: medium,
             campaign: utmParams.campaign || null,
             content: utmParams.content || null,
             term: utmParams.term || null,
@@ -598,6 +587,20 @@ class MarketingAttribution {
             click_id: clickId,
             device_type: this.getDeviceType()
         };
+
+        // Update first and last touch points
+        const data = this.getStoredData();
+        
+        if (!data.first_touch) {
+            data.first_touch = touch;
+        }
+        data.last_touch = touch;
+
+        // Store the updated data
+        this.safeSetItem(this.STORAGE_KEY, data);
+
+        // Update session data
+        this.updateSession(touch);
 
         return touch;
     }
@@ -736,22 +739,22 @@ class MarketingAttribution {
         
         return {
             first_touch: {
-                source: data.firstTouch?.source || '(direct)',
-                medium: data.firstTouch?.medium || '(none)',
-                campaign: data.firstTouch?.campaign || null,
-                landing_page: data.firstTouch?.landing_page || null,
-                timestamp: data.firstTouch?.timestamp || null,
-                device: data.firstTouch?.device_type || null,
-                click_id: data.firstTouch?.click_id || null
+                source: data.first_touch?.source || '(direct)',
+                medium: data.first_touch?.medium || '(none)',
+                campaign: data.first_touch?.campaign || null,
+                landing_page: data.first_touch?.landing_page || null,
+                timestamp: data.first_touch?.timestamp || null,
+                device: data.first_touch?.device_type || null,
+                click_id: data.first_touch?.click_id || null
             },
             last_touch: {
-                source: data.lastTouch?.source || '(direct)',
-                medium: data.lastTouch?.medium || '(none)',
-                campaign: data.lastTouch?.campaign || null,
-                landing_page: data.lastTouch?.landing_page || null,
-                timestamp: data.lastTouch?.timestamp || null,
-                device: data.lastTouch?.device_type || null,
-                click_id: data.lastTouch?.click_id || null
+                source: data.last_touch?.source || '(direct)',
+                medium: data.last_touch?.medium || '(none)',
+                campaign: data.last_touch?.campaign || null,
+                landing_page: data.last_touch?.landing_page || null,
+                timestamp: data.last_touch?.timestamp || null,
+                device: data.last_touch?.device_type || null,
+                click_id: data.last_touch?.click_id || null
             },
             session: {
                 pages: sessionData.pageViews || [],
@@ -761,7 +764,7 @@ class MarketingAttribution {
                 first_seen: visitorData.firstSeen || null,
                 visits: visitorData.visitCount || 1,
                 touches: visitorData.touchCount || 1,
-                days_since_first: this.calculateDaysSinceFirstTouch(data.firstTouch?.timestamp) || 0
+                days_since_first: this.calculateDaysSinceFirstTouch(data.first_touch?.timestamp) || 0
             }
         };
     }
@@ -787,7 +790,7 @@ class MarketingAttribution {
             : '';
         
         // Time calculations
-        params.days_to_convert = this.calculateDaysSinceFirstTouch(data.firstTouch?.timestamp);
+        params.days_to_convert = this.calculateDaysSinceFirstTouch(data.first_touch?.timestamp);
 
         // Visitor metrics
         params.visitor_type = params.days_to_convert === 0 ? 'new' : 'returning';
@@ -799,31 +802,31 @@ class MarketingAttribution {
 
         // Device types
         params.conversion_device = this.getDeviceType(); // Device at form submission
-        params.first_device = data.firstTouch?.device_type || this.getDeviceType(); // Device at first visit
+        params.first_device = data.first_touch?.device_type || this.getDeviceType(); // Device at first visit
         params.device_switch = params.first_device !== params.conversion_device ? 'yes' : 'no'; // Did they switch devices?
         
         // First touch parameters
-        if (data.firstTouch) {
-            params.ft_source = data.firstTouch.source;
-            params.ft_medium = data.firstTouch.medium;
-            params.ft_campaign = data.firstTouch.campaign;
-            params.ft_content = data.firstTouch.content;
-            params.ft_term = data.firstTouch.term;
-            params.ft_landing = data.firstTouch.landing_page;
-            params.ft_timestamp = data.firstTouch.timestamp;
-            params.ft_referrer = data.firstTouch.referrer;
+        if (data.first_touch) {
+            params.ft_source = data.first_touch.source;
+            params.ft_medium = data.first_touch.medium;
+            params.ft_campaign = data.first_touch.campaign;
+            params.ft_content = data.first_touch.content;
+            params.ft_term = data.first_touch.term;
+            params.ft_landing = data.first_touch.landing_page;
+            params.ft_timestamp = data.first_touch.timestamp;
+            params.ft_referrer = data.first_touch.referrer;
         }
 
         // Last touch parameters (at conversion)
-        if (data.lastTouch) {
-            params.lt_source = data.lastTouch.source;
-            params.lt_medium = data.lastTouch.medium;
-            params.lt_campaign = data.lastTouch.campaign;
-            params.lt_content = data.lastTouch.content;
-            params.lt_term = data.lastTouch.term;
-            params.lt_landing = data.lastTouch.landing_page;
-            params.lt_timestamp = data.lastTouch.timestamp;
-            params.lt_referrer = data.lastTouch.referrer;
+        if (data.last_touch) {
+            params.lt_source = data.last_touch.source;
+            params.lt_medium = data.last_touch.medium;
+            params.lt_campaign = data.last_touch.campaign;
+            params.lt_content = data.last_touch.content;
+            params.lt_term = data.last_touch.term;
+            params.lt_landing = data.last_touch.landing_page;
+            params.lt_timestamp = data.last_touch.timestamp;
+            params.lt_referrer = data.last_touch.referrer;
         }
 
         return params;
@@ -867,8 +870,8 @@ class MarketingAttribution {
 
             // Clean up very old attribution data
             const data = this.getStoredData();
-            if (data?.firstTouch?.timestamp) {
-                const age = Date.now() - new Date(data.firstTouch.timestamp).getTime();
+            if (data?.first_touch?.timestamp) {
+                const age = Date.now() - new Date(data.first_touch.timestamp).getTime();
                 if (age > this.MAX_ATTRIBUTION_AGE) {
                     localStorage.removeItem(this.STORAGE_KEY);
                 }
@@ -899,6 +902,18 @@ class MarketingAttribution {
         });
         
         return cleanParams;
+    }
+
+    updateSession(touch) {
+        const sessionData = this.getSessionData();
+        if (!sessionData.pageViews) {
+            sessionData.pageViews = [];
+        }
+        sessionData.pageViews.push({
+            path: window.location.pathname,
+            timestamp: touch.timestamp
+        });
+        this.safeSetItem(this.SESSION_KEY, sessionData);
     }
 }
 
