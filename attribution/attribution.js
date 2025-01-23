@@ -606,6 +606,19 @@ class MarketingAttribution {
         return touch;
     }
 
+    storeData(data) {
+        if (!this._storageAvailable) return;
+        
+        try {
+            this.safeSetItem(this.STORAGE_KEY, {
+                first_touch: data.first_touch || null,
+                last_touch: data.last_touch || null
+            });
+        } catch (e) {
+            this.log('warn', 'Error storing attribution data:', e);
+        }
+    }
+
     getStoredData() {
         const now = Date.now();
         if (this._cache.storageData && 
