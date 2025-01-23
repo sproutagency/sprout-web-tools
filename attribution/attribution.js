@@ -733,9 +733,9 @@ class MarketingAttribution {
     }
 
     getAttributionData() {
-        const data = this.getStoredData() || {};
-        const sessionData = this.getSessionData() || {};
-        const visitorData = this.getVisitorData() || {};
+        const data = this.getStoredData();
+        const sessionData = this.getSessionData();
+        const visitorData = this.getVisitorData();
         
         return {
             first_touch: {
@@ -776,17 +776,14 @@ class MarketingAttribution {
     }
 
     getFilloutParameters() {
-        const data = this.getAttributionData();
-        const sessionData = this.getSessionData();
-        const visitorData = this.getVisitorData();
+        const data = this.getStoredData();
+        const visitorData = this.safeGetItem(this.VISITOR_KEY) || {};
         const params = {};
-
-        // Current page (conversion page)
-        params.conversion_page = window.location.pathname;
-
-        // Session journey
-        params.session_pages = sessionData.pageViews
-            ? sessionData.pageViews.map(pv => pv.path).join(' → ')
+        
+        // Add business profile ID if present
+        const pbid = new URLSearchParams(window.location.search).get('pbid') || '';
+        params.business_profile_id = pbid 
+            ? pbid.replace(/[^a-zA-Z0-9-_]/g, '')  // Sanitize the ID
             : '';
         
         // Time calculations
@@ -794,11 +791,11 @@ class MarketingAttribution {
 
         // Visitor metrics
         params.visitor_type = params.days_to_convert === 0 ? 'new' : 'returning';
-        params.total_touches = visitorData.touchCount || 1;
-        params.visit_count = visitorData.visitCount || 1;
-        
-        // Session metrics
-        params.pages_in_session = sessionData.pageViews ? sessionData.pageViews.length : 1;
+        params.visits = visitorData.visitCount || 1;
+        params.touches = visitorData.touchCount || 1;
+
+        // Session data
+        params.pages_viewed = this.safeGetItem(this.SESSION_KEY)?.pageViews?.length || 1;
 
         // Device types
         params.conversion_device = this.getDeviceType(); // Device at form submission
