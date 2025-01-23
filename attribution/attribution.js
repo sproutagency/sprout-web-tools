@@ -346,8 +346,23 @@ class MarketingAttribution {
 
     initializeSession() {
         const isNew = this.isNewSession();
-        let sessionData = this.getSessionData();
+        let sessionData = this.safeGetItem(this.SESSION_KEY);
+        let visitorData = this.safeGetItem(this.VISITOR_KEY);
         
+        // Initialize visitor data first
+        if (!visitorData.firstSeen) {
+            visitorData = {
+                firstSeen: new Date().toISOString(),
+                visitCount: 1,
+                touchCount: 1
+            };
+        } else if (isNew) {
+            visitorData.visitCount++;
+            visitorData.touchCount++;
+        }
+        this.safeSetItem(this.VISITOR_KEY, visitorData);
+        
+        // Then handle session data
         if (!sessionData.pageViews || isNew) {
             sessionData = {
                 startTime: new Date().toISOString(),
@@ -368,20 +383,6 @@ class MarketingAttribution {
             }
         }
         this.safeSetItem(this.SESSION_KEY, sessionData);
-
-        // Update visitor data
-        let visitorData = this.getVisitorData();
-        if (!visitorData.firstSeen) {
-            visitorData = {
-                firstSeen: new Date().toISOString(),
-                visitCount: 1,
-                touchCount: 1
-            };
-        } else if (isNew) {
-            visitorData.visitCount++;
-            visitorData.touchCount++;
-        }
-        this.safeSetItem(this.VISITOR_KEY, visitorData);
         
         return isNew;
     }
