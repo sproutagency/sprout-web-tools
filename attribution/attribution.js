@@ -4,34 +4,22 @@
  */
 
 class MarketingAttribution {
-    constructor(mockData) {
+    constructor(mockData, options = {}) {
         this.STORAGE_KEY = 'attribution_data';
         this.SESSION_KEY = 'attribution_session';
         this.VISITOR_KEY = 'visitor_data';
         this.SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
-        this.MAX_PAGEVIEWS = 50; // Limit stored pageviews
+        this.MAX_PAGEVIEWS = 50;
         this.MAX_SESSION_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
-        this._mockData = mockData; // For testing purposes
-        this.ATTRIBUTION_WINDOW = {
-            PAID_SEARCH: 30 * 24 * 60 * 60 * 1000,    // 30 days for paid search
-            PAID_SOCIAL: 28 * 24 * 60 * 60 * 1000,    // 28 days for paid social
-            ORGANIC_SOCIAL: 7 * 24 * 60 * 60 * 1000,  // 7 days for organic social
-            ORGANIC_SEARCH: 7 * 24 * 60 * 60 * 1000,  // 7 days for organic search
-            EMAIL: 7 * 24 * 60 * 60 * 1000,           // 7 days for email
-            REFERRAL: 1 * 24 * 60 * 60 * 1000         // 1 day for referral
-        };
-        this.CHANNEL_PRIORITY = {
-            'paid_search': 1,    // Highest priority
-            'cpc': 1,
-            'lsa': 1,
-            'paid_social': 2,
-            'display': 3,
-            'email': 4,
-            'organic_social': 5,
-            'social': 5,
-            'organic': 6,
-            'referral': 7,
-            '(none)': 8         // Lowest priority
+        this.MAX_ATTRIBUTION_AGE = 365 * 24 * 60 * 60 * 1000; // 1 year
+        this._mockData = mockData;
+        this.debug = options.debug || false;
+
+        // Cache frequently accessed values
+        this._cache = {
+            deviceType: null,
+            hostname: window.location.hostname,
+            supportsURLAPI: typeof URL === 'function'
         };
 
         // Standardized mediums for consistency
@@ -75,19 +63,83 @@ class MarketingAttribution {
             'direct': '(direct)'
         };
 
-        this._storageAvailable = null;
+        this.ATTRIBUTION_WINDOW = {
+            PAID_SEARCH: 30 * 24 * 60 * 60 * 1000,    // 30 days for paid search
+            PAID_SOCIAL: 28 * 24 * 60 * 60 * 1000,    // 28 days for paid social
+            ORGANIC_SOCIAL: 7 * 24 * 60 * 60 * 1000,  // 7 days for organic social
+            ORGANIC_SEARCH: 7 * 24 * 60 * 60 * 1000,  // 7 days for organic search
+            EMAIL: 7 * 24 * 60 * 60 * 1000,           // 7 days for email
+            REFERRAL: 1 * 24 * 60 * 60 * 1000         // 1 day for referral
+        };
 
-        // Initialize with storage check
-        if (!this.isStorageAvailable()) {
-            console.warn('localStorage is not available. Attribution tracking will be limited.');
-            this._storageAvailable = false;
+        this.CHANNEL_PRIORITY = {
+            'paid_search': 1,    // Highest priority
+            'cpc': 1,
+            'lsa': 1,
+            'paid_social': 2,
+            'display': 3,
+            'email': 4,
+            'organic_social': 5,
+            'social': 5,
+            'organic': 6,
+            'referral': 7,
+            '(none)': 8         // Lowest priority
+        };
+
+        this._storageAvailable = this.isStorageAvailable();
+        if (!this._storageAvailable) {
+            this.log('warn', 'localStorage is not available. Attribution tracking will be limited.');
         } else {
-            this._storageAvailable = true;
             this.cleanupOldData();
         }
 
         this.initializeTracking();
         this.initializeSession();
+    }
+
+    log(level, ...args) {
+        if (this.debug || level === 'error' || level === 'warn') {
+            console[level](...args);
+        }
+    }
+
+    createUrl(url) {
+        if (this._cache.supportsURLAPI) {
+            try {
+                return url instanceof URL ? url : new URL(url);
+            } catch (e) {
+                this.log('warn', 'Invalid URL:', url);
+            }
+        }
+        
+        // Fallback for older browsers or invalid URLs
+        const a = document.createElement('a');
+        a.href = url || window.location.href;
+        return {
+            pathname: a.pathname.replace(/^([^/])/, '/$1'),
+            hostname: a.hostname,
+            search: a.search
+        };
+    }
+
+    getDeviceType() {
+        if (this._cache.deviceType) return this._cache.deviceType;
+
+        const ua = navigator.userAgent;
+        const mobile = /Mobile|Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(ua);
+        const tablet = /Tablet|iPad/i.test(ua);
+        
+        let result;
+        if (tablet || (mobile && window.innerWidth >= 768)) {
+            result = 'tablet';
+        } else if (mobile) {
+            result = 'mobile';
+        } else {
+            result = 'desktop';
+        }
+
+        this._cache.deviceType = result;
+        return result;
     }
 
     sanitizeAttributionValue(value, standardValues) {
@@ -203,19 +255,73 @@ class MarketingAttribution {
         return this.ATTRIBUTION_WINDOW.REFERRAL; // Default to shortest window
     }
 
-    getDeviceType() {
-        const ua = navigator.userAgent;
-        const mobile = /Mobile|Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(ua);
-        const tablet = /Tablet|iPad/i.test(ua);
-        
-        // More accurate device detection
-        if (tablet || (mobile && window.innerWidth >= 768)) {
-            return 'tablet';
+    determineAttribution(referrer, utmParams, clickIds, currentUrl) {
+        // Check UTM parameters first (highest priority)
+        if (this.hasUtmParameters(utmParams)) {
+            return this.getUtmAttribution(utmParams);
         }
-        if (mobile) {
-            return 'mobile';
+
+        // Check for paid traffic click IDs
+        if (this.hasClickIds(clickIds)) {
+            return this.getClickIdAttribution(clickIds);
         }
-        return 'desktop';
+
+        // Check referrer
+        if (this.hasReferrer(referrer)) {
+            return this.getReferrerAttribution(referrer);
+        }
+
+        // Default to direct
+        return this.getDirectAttribution();
+    }
+
+    hasUtmParameters(utmParams) {
+        return utmParams.source || utmParams.medium;
+    }
+
+    hasClickIds(clickIds) {
+        return Object.values(clickIds).some(id => id);
+    }
+
+    hasReferrer(referrer) {
+        return referrer && !referrer.includes(this._cache.hostname);
+    }
+
+    getUtmAttribution(utmParams) {
+        return {
+            source: this.sanitizeAttributionValue(utmParams.source, this.STANDARD_SOURCES),
+            medium: this.sanitizeAttributionValue(utmParams.medium, this.STANDARD_MEDIUMS)
+        };
+    }
+
+    getClickIdAttribution(clickIds) {
+        if (clickIds.gclid) return { source: 'google', medium: 'cpc' };
+        if (clickIds.fbclid) return { source: 'facebook', medium: 'paid_social' };
+        if (clickIds.msclkid) return { source: 'bing', medium: 'cpc' };
+        if (clickIds.dclid) return { source: 'google', medium: 'display' };
+        return this.getDirectAttribution();
+    }
+
+    getReferrerAttribution(referrer) {
+        try {
+            const referrerUrl = this.createUrl(referrer);
+            const referrerDomain = referrerUrl.hostname.replace('www.', '');
+
+            if (referrerDomain.includes('google')) return { source: 'google', medium: 'organic' };
+            if (referrerDomain.includes('bing')) return { source: 'bing', medium: 'organic' };
+            if (referrerDomain.includes('facebook')) return { source: 'facebook', medium: 'social' };
+            if (referrerDomain.includes('instagram')) return { source: 'instagram', medium: 'social' };
+            if (referrerDomain.includes('linkedin')) return { source: 'linkedin', medium: 'social' };
+            
+            return { source: referrerDomain, medium: 'referral' };
+        } catch (e) {
+            this.log('warn', 'Error processing referrer:', e);
+            return this.getDirectAttribution();
+        }
+    }
+
+    getDirectAttribution() {
+        return { source: '(direct)', medium: '(none)' };
     }
 
     createTouch() {
@@ -274,60 +380,6 @@ class MarketingAttribution {
         };
 
         return touch;
-    }
-
-    determineAttribution(referrer, utmParams, clickIds, currentUrl) {
-        let source = null;
-        let medium = null;
-
-        // 1. Campaign Parameters (Highest Priority)
-        if (utmParams.source || utmParams.medium) {
-            source = this.sanitizeAttributionValue(utmParams.source, this.STANDARD_SOURCES);
-            medium = this.sanitizeAttributionValue(utmParams.medium, this.STANDARD_MEDIUMS);
-        }
-
-        // 2. Click IDs - Paid Traffic
-        if (!source && !medium) {
-            if (clickIds.gclid) {
-                source = 'google';
-                medium = 'cpc';
-            } else if (clickIds.fbclid) {
-                source = 'facebook';
-                medium = 'paid_social';
-            } else if (clickIds.msclkid) {
-                source = 'bing';
-                medium = 'cpc';
-            }
-        }
-
-        // If we still don't have attribution, process referrer
-        if (!source && !medium && referrer) {
-            try {
-                const referrerUrl = new URL(referrer);
-                const referrerDomain = referrerUrl.hostname.replace('www.', '');
-
-                if (referrerDomain.includes('google')) {
-                    source = 'google';
-                    medium = 'organic';
-                } else if (referrerDomain.includes('bing')) {
-                    source = 'bing';
-                    medium = 'organic';
-                } else if (referrerDomain.includes('facebook')) {
-                    source = 'facebook';
-                    medium = 'social';
-                } else {
-                    source = referrerDomain;
-                    medium = 'referral';
-                }
-            } catch (e) {
-                console.warn('Error processing referrer:', e);
-            }
-        }
-
-        return {
-            source: source || '(direct)',
-            medium: medium || '(none)'
-        };
     }
 
     getStoredData() {
@@ -467,7 +519,8 @@ class MarketingAttribution {
 
     cleanupOldData() {
         try {
-            const sessionData = this.getSessionData() || {};
+            // Clean up old sessions
+            const sessionData = this.getSessionData();
             if (sessionData?.startTime) {
                 const sessionAge = Date.now() - new Date(sessionData.startTime).getTime();
                 if (sessionAge > this.MAX_SESSION_AGE) {
@@ -475,13 +528,23 @@ class MarketingAttribution {
                 }
             }
 
+            // Limit pageviews
             if (sessionData?.pageViews && sessionData.pageViews.length > this.MAX_PAGEVIEWS) {
                 sessionData.pageViews = sessionData.pageViews.slice(-this.MAX_PAGEVIEWS);
                 this.safeSetItem(this.SESSION_KEY, sessionData);
             }
+
+            // Clean up very old attribution data
+            const data = this.getStoredData();
+            if (data?.firstTouch?.timestamp) {
+                const age = Date.now() - new Date(data.firstTouch.timestamp).getTime();
+                if (age > this.MAX_ATTRIBUTION_AGE) {
+                    localStorage.removeItem(this.STORAGE_KEY);
+                }
+            }
         } catch (e) {
             if (!(e instanceof TypeError)) {
-                console.warn('Error cleaning up old data:', e);
+                this.log('warn', 'Error cleaning up old data:', e);
             }
         }
     }
@@ -490,7 +553,12 @@ class MarketingAttribution {
         if (!this._storageAvailable) return false;
         
         try {
-            localStorage.setItem(key, JSON.stringify(value));
+            const serialized = JSON.stringify(value);
+            if (serialized.length > 5242880) { // 5MB limit
+                this.log('warn', 'Data too large for localStorage');
+                return false;
+            }
+            localStorage.setItem(key, serialized);
             return true;
         } catch (e) {
             if (e.name === 'QuotaExceededError') {
@@ -499,7 +567,7 @@ class MarketingAttribution {
                     localStorage.setItem(key, JSON.stringify(value));
                     return true;
                 } catch (e2) {
-                    console.warn('Storage full, could not save data');
+                    this.log('warn', 'Storage full, could not save data');
                 }
             }
             return false;
