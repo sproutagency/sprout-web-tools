@@ -589,16 +589,17 @@ class MarketingAttribution {
             device_type: this.getDeviceType()
         };
 
-        // Update first and last touch points
+        // Get stored data
         const data = this.getStoredData();
         
-        if (!data.first_touch) {
-            data.first_touch = touch;
+        // Update first and last touch
+        if (!data.firstTouch) {
+            data.firstTouch = touch;
         }
-        data.last_touch = touch;
+        data.lastTouch = touch;
 
         // Store the updated data
-        this.safeSetItem(this.STORAGE_KEY, data);
+        this.storeData(data);
 
         // Update session data
         this.updateSession(touch);
@@ -611,12 +612,49 @@ class MarketingAttribution {
         
         try {
             this.safeSetItem(this.STORAGE_KEY, {
-                first_touch: data.first_touch || null,
-                last_touch: data.last_touch || null
+                firstTouch: data.firstTouch || null,
+                lastTouch: data.lastTouch || null
             });
         } catch (e) {
             this.log('warn', 'Error storing attribution data:', e);
         }
+    }
+
+    getAttributionData() {
+        const data = this.getStoredData();
+        const sessionData = this.safeGetItem(this.SESSION_KEY) || {};
+        const visitorData = this.safeGetItem(this.VISITOR_KEY) || {};
+        
+        return {
+            first_touch: {
+                source: data.firstTouch?.source || '(direct)',
+                medium: data.firstTouch?.medium || '(none)',
+                campaign: data.firstTouch?.campaign || null,
+                landing_page: data.firstTouch?.landing_page || null,
+                timestamp: data.firstTouch?.timestamp || null,
+                device: data.firstTouch?.device_type || null,
+                click_id: data.firstTouch?.click_id || null
+            },
+            last_touch: {
+                source: data.lastTouch?.source || '(direct)',
+                medium: data.lastTouch?.medium || '(none)',
+                campaign: data.lastTouch?.campaign || null,
+                landing_page: data.lastTouch?.landing_page || null,
+                timestamp: data.lastTouch?.timestamp || null,
+                device: data.lastTouch?.device_type || null,
+                click_id: data.lastTouch?.click_id || null
+            },
+            session: {
+                pages: sessionData.pageViews || [],
+                start_time: sessionData.startTime || null
+            },
+            visitor: {
+                first_seen: visitorData.firstSeen || null,
+                visits: visitorData.visitCount || 1,
+                touches: visitorData.touchCount || 1,
+                days_since_first: this.calculateDaysSinceFirstTouch(data.firstTouch?.timestamp) || 0
+            }
+        };
     }
 
     getStoredData() {
@@ -745,43 +783,6 @@ class MarketingAttribution {
         }
     }
 
-    getAttributionData() {
-        const data = this.getStoredData();
-        const sessionData = this.getSessionData();
-        const visitorData = this.getVisitorData();
-        
-        return {
-            first_touch: {
-                source: data.first_touch?.source || '(direct)',
-                medium: data.first_touch?.medium || '(none)',
-                campaign: data.first_touch?.campaign || null,
-                landing_page: data.first_touch?.landing_page || null,
-                timestamp: data.first_touch?.timestamp || null,
-                device: data.first_touch?.device_type || null,
-                click_id: data.first_touch?.click_id || null
-            },
-            last_touch: {
-                source: data.last_touch?.source || '(direct)',
-                medium: data.last_touch?.medium || '(none)',
-                campaign: data.last_touch?.campaign || null,
-                landing_page: data.last_touch?.landing_page || null,
-                timestamp: data.last_touch?.timestamp || null,
-                device: data.last_touch?.device_type || null,
-                click_id: data.last_touch?.click_id || null
-            },
-            session: {
-                pages: sessionData.pageViews || [],
-                start_time: sessionData.startTime || null
-            },
-            visitor: {
-                first_seen: visitorData.firstSeen || null,
-                visits: visitorData.visitCount || 1,
-                touches: visitorData.touchCount || 1,
-                days_since_first: this.calculateDaysSinceFirstTouch(data.first_touch?.timestamp) || 0
-            }
-        };
-    }
-
     calculateDaysSinceFirstTouch(firstTouchTime) {
         const currentTime = new Date().getTime();
         const firstTime = new Date(firstTouchTime).getTime();
@@ -800,7 +801,7 @@ class MarketingAttribution {
             : '';
         
         // Time calculations
-        params.days_to_convert = this.calculateDaysSinceFirstTouch(data.first_touch?.timestamp);
+        params.days_to_convert = this.calculateDaysSinceFirstTouch(data.firstTouch?.timestamp);
 
         // Visitor metrics
         params.visitor_type = params.days_to_convert === 0 ? 'new' : 'returning';
@@ -812,31 +813,31 @@ class MarketingAttribution {
 
         // Device types
         params.conversion_device = this.getDeviceType(); // Device at form submission
-        params.first_device = data.first_touch?.device_type || this.getDeviceType(); // Device at first visit
+        params.first_device = data.firstTouch?.device_type || this.getDeviceType(); // Device at first visit
         params.device_switch = params.first_device !== params.conversion_device ? 'yes' : 'no'; // Did they switch devices?
         
         // First touch parameters
-        if (data.first_touch) {
-            params.ft_source = data.first_touch.source;
-            params.ft_medium = data.first_touch.medium;
-            params.ft_campaign = data.first_touch.campaign;
-            params.ft_content = data.first_touch.content;
-            params.ft_term = data.first_touch.term;
-            params.ft_landing = data.first_touch.landing_page;
-            params.ft_timestamp = data.first_touch.timestamp;
-            params.ft_referrer = data.first_touch.referrer;
+        if (data.firstTouch) {
+            params.ft_source = data.firstTouch.source;
+            params.ft_medium = data.firstTouch.medium;
+            params.ft_campaign = data.firstTouch.campaign;
+            params.ft_content = data.firstTouch.content;
+            params.ft_term = data.firstTouch.term;
+            params.ft_landing = data.firstTouch.landing_page;
+            params.ft_timestamp = data.firstTouch.timestamp;
+            params.ft_referrer = data.firstTouch.referrer;
         }
 
         // Last touch parameters (at conversion)
-        if (data.last_touch) {
-            params.lt_source = data.last_touch.source;
-            params.lt_medium = data.last_touch.medium;
-            params.lt_campaign = data.last_touch.campaign;
-            params.lt_content = data.last_touch.content;
-            params.lt_term = data.last_touch.term;
-            params.lt_landing = data.last_touch.landing_page;
-            params.lt_timestamp = data.last_touch.timestamp;
-            params.lt_referrer = data.last_touch.referrer;
+        if (data.lastTouch) {
+            params.lt_source = data.lastTouch.source;
+            params.lt_medium = data.lastTouch.medium;
+            params.lt_campaign = data.lastTouch.campaign;
+            params.lt_content = data.lastTouch.content;
+            params.lt_term = data.lastTouch.term;
+            params.lt_landing = data.lastTouch.landing_page;
+            params.lt_timestamp = data.lastTouch.timestamp;
+            params.lt_referrer = data.lastTouch.referrer;
         }
 
         return params;
@@ -880,8 +881,8 @@ class MarketingAttribution {
 
             // Clean up very old attribution data
             const data = this.getStoredData();
-            if (data?.first_touch?.timestamp) {
-                const age = Date.now() - new Date(data.first_touch.timestamp).getTime();
+            if (data?.firstTouch?.timestamp) {
+                const age = Date.now() - new Date(data.firstTouch.timestamp).getTime();
                 if (age > this.MAX_ATTRIBUTION_AGE) {
                     localStorage.removeItem(this.STORAGE_KEY);
                 }
