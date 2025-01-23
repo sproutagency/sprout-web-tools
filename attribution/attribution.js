@@ -635,34 +635,16 @@ class MarketingAttribution {
         return data;
     }
 
-    processTouchBatch(touches) {
-        if (!Array.isArray(touches) || touches.length === 0) {
-            return [];
+    safeGetItem(key) {
+        if (!this._storageAvailable) return {};
+        
+        try {
+            const item = localStorage.getItem(key);
+            return item ? JSON.parse(item) : {};  
+        } catch (e) {
+            this.log('warn', 'Error reading from storage:', e);
+            return {};  
         }
-
-        const batchSize = Math.min(touches.length, this.PERFORMANCE.MAX_BATCH_SIZE);
-        const processedTouches = [];
-        let storageModified = false;
-
-        // Process in chunks to avoid blocking
-        for (let i = 0; i < batchSize; i++) {
-            try {
-                const touch = this.createTouch(touches[i]);
-                if (touch) {
-                    processedTouches.push(touch);
-                    storageModified = true;
-                }
-            } catch (e) {
-                this.log('warn', `Error processing touch at index ${i}:`, e);
-            }
-        }
-
-        // Update cache status
-        if (storageModified) {
-            this._cache.storageModified = true;
-        }
-
-        return processedTouches;
     }
 
     safeSetItem(key, value) {
