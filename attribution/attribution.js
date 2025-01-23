@@ -29,17 +29,7 @@ class MarketingAttribution {
             hostname: window.location.hostname,
             supportsURLAPI: typeof URL === 'function',
             searchEnginePatterns: this._compileSearchPatterns(),
-            domainMaps: this._compileDomainMaps(),
-            lastCleanup: Date.now(),
-            lastStorageCheck: Date.now(),
-            lastStorageRead: Date.now(),
-            lastSessionRead: Date.now(),
-            storageData: null,
-            sessionData: null,
-            visitorData: null,
-            currentPageview: null,
-            storageModified: false,
-            sessionModified: false
+            domainMaps: this._compileDomainMaps()
         };
 
         // Standardized mediums for consistency
@@ -146,15 +136,6 @@ class MarketingAttribution {
             '(none)': 8         // Lowest priority
         };
 
-        this.PERFORMANCE = {
-            CLEANUP_INTERVAL: 5 * 60 * 1000, // Run cleanup every 5 minutes
-            STORAGE_CHECK_INTERVAL: 60 * 1000, // Check storage availability every minute
-            CACHE_TTL: 30 * 1000, // Cache TTL for storage data (30 seconds)
-            MAX_BATCH_SIZE: 10, // Maximum number of touches to process at once
-            MAX_CACHE_ITEMS: 1000,
-            MAX_CACHE_SIZE: 1024 * 1024 // 1MB
-        };
-
         this._storageAvailable = this.isStorageAvailable();
         if (!this._storageAvailable) {
             this.log('warn', 'localStorage is not available. Attribution tracking will be limited.');
@@ -164,34 +145,6 @@ class MarketingAttribution {
 
         this.initializeTracking();
         this.initializeSession();
-
-        // Schedule periodic cache cleanup
-        if (typeof window !== 'undefined') {
-            this._cleanupInterval = setInterval(() => this._cleanupCache(), this.PERFORMANCE.CLEANUP_INTERVAL);
-        }
-    }
-
-    destroy() {
-        if (this._cleanupInterval) {
-            clearInterval(this._cleanupInterval);
-        }
-        this._cache = null;
-    }
-
-    _cleanupCache() {
-        try {
-            const cacheSize = JSON.stringify(this._cache).length;
-            if (cacheSize > this.PERFORMANCE.MAX_CACHE_SIZE) {
-                // Reset non-critical cache items
-                this._cache.storageData = null;
-                this._cache.sessionData = null;
-                this._cache.currentPageview = null;
-                this._cache.storageModified = true;
-                this._cache.sessionModified = true;
-            }
-        } catch (e) {
-            this.log('warn', 'Error during cache cleanup:', e);
-        }
     }
 
     _compileSearchPatterns() {
@@ -251,53 +204,22 @@ class MarketingAttribution {
     }
 
     createUrl(url) {
-        if (!url) return this._createUrlFromLocation();
-        
         if (this._cache.supportsURLAPI) {
             try {
                 return url instanceof URL ? url : new URL(url);
             } catch (e) {
                 this.log('warn', 'Invalid URL:', url);
-                return this._createUrlFromLocation();
             }
         }
         
-        return this._createUrlFromAnchor(url);
-    }
-
-    _createUrlFromLocation() {
-        try {
-            return {
-                pathname: window.location.pathname || '/',
-                hostname: this._cache.hostname || window.location.hostname,
-                search: window.location.search || '',
-                protocol: window.location.protocol
-            };
-        } catch (e) {
-            this.log('warn', 'Error creating URL from location:', e);
-            return {
-                pathname: '/',
-                hostname: this._cache.hostname || '',
-                search: '',
-                protocol: 'https:'
-            };
-        }
-    }
-
-    _createUrlFromAnchor(url) {
-        try {
-            const a = document.createElement('a');
-            a.href = url || window.location.href;
-            return {
-                pathname: a.pathname.replace(/^([^/])/, '/$1'),
-                hostname: a.hostname,
-                search: a.search,
-                protocol: a.protocol
-            };
-        } catch (e) {
-            this.log('warn', 'Error creating URL from anchor:', e);
-            return this._createUrlFromLocation();
-        }
+        // Fallback for older browsers or invalid URLs
+        const a = document.createElement('a');
+        a.href = url || window.location.href;
+        return {
+            pathname: a.pathname.replace(/^([^/])/, '/$1'),
+            hostname: a.hostname,
+            search: a.search
+        };
     }
 
     getDeviceType() {
@@ -346,23 +268,8 @@ class MarketingAttribution {
 
     initializeSession() {
         const isNew = this.isNewSession();
-        let sessionData = this.safeGetItem(this.SESSION_KEY);
-        let visitorData = this.safeGetItem(this.VISITOR_KEY);
+        let sessionData = this.getSessionData();
         
-        // Initialize visitor data first
-        if (!visitorData.firstSeen) {
-            visitorData = {
-                firstSeen: new Date().toISOString(),
-                visitCount: 1,
-                touchCount: 1
-            };
-        } else if (isNew) {
-            visitorData.visitCount++;
-            visitorData.touchCount++;
-        }
-        this.safeSetItem(this.VISITOR_KEY, visitorData);
-        
-        // Then handle session data
         if (!sessionData.pageViews || isNew) {
             sessionData = {
                 startTime: new Date().toISOString(),
@@ -383,6 +290,20 @@ class MarketingAttribution {
             }
         }
         this.safeSetItem(this.SESSION_KEY, sessionData);
+
+        // Update visitor data
+        let visitorData = this.getVisitorData();
+        if (!visitorData.firstSeen) {
+            visitorData = {
+                firstSeen: new Date().toISOString(),
+                visitCount: 1,
+                touchCount: 1
+            };
+        } else if (isNew) {
+            visitorData.visitCount++;
+            visitorData.touchCount++;
+        }
+        this.safeSetItem(this.VISITOR_KEY, visitorData);
         
         return isNew;
     }
@@ -546,40 +467,51 @@ class MarketingAttribution {
     }
 
     createTouch() {
-        // Get current URL and params
+        // Use mock data for testing if available
         const currentUrl = this._mockData?.currentUrl || new URL(window.location.href);
-        const urlParams = this._mockData?.urlParams || new URLSearchParams(window.location.search);
         const referrer = this._mockData?.referrer || document.referrer;
+        
+        // Get UTM parameters from mock data or current URL
+        const currentParams = this._mockData?.urlParams || new URLSearchParams(window.location.search);
+
+        // Get UTM parameters
+        const utmParams = this.validateUtmParams(currentParams);
+
+        // Get click IDs
+        const clickIds = {
+            gclid: currentParams.get('gclid'),
+            fbclid: currentParams.get('fbclid'),
+            msclkid: currentParams.get('msclkid'),
+            dclid: currentParams.get('dclid')
+        };
+
+        // Get the landing page path without query parameters
         const landingPath = currentUrl.pathname;
 
-        // Extract UTM parameters
-        const utmParams = {
-            source: urlParams.get('utm_source'),
-            medium: urlParams.get('utm_medium'),
-            campaign: urlParams.get('utm_campaign'),
-            content: urlParams.get('utm_content'),
-            term: urlParams.get('utm_term')
-        };
+        // Determine source and medium
+        let attribution = this.determineAttribution(referrer, utmParams, clickIds, currentUrl);
 
-        // Extract click IDs
-        const clickIds = {
-            gclid: urlParams.get('gclid'),
-            fbclid: urlParams.get('fbclid'),
-            msclkid: urlParams.get('msclkid'),
-            dclid: urlParams.get('dclid')
-        };
+        // For direct visits (no referrer and no campaign parameters),
+        // we should explicitly set it as direct/(none)
+        const hasNoReferrer = !referrer || referrer.includes(window.location.hostname);
+        const hasNoCampaign = !utmParams.source && !Object.values(clickIds).some(id => id);
+        const hasNoBusinessProfile = !currentParams.get('pbid');
+
+        if ((hasNoReferrer || referrer === '') && hasNoCampaign && hasNoBusinessProfile) {
+            attribution = {
+                source: '(direct)',
+                medium: '(none)'
+            };
+        }
 
         // Find the first non-null click ID value
         const clickId = Object.entries(clickIds).find(([_, value]) => value)?.[1] || null;
 
-        // Determine attribution
-        const { source, medium } = this.determineAttribution(referrer, utmParams, clickIds, currentUrl);
-
         // Create the touch
         const touch = {
             timestamp: new Date().toISOString(),
-            source: source,
-            medium: medium,
+            source: attribution.source,
+            medium: attribution.medium,
             campaign: utmParams.campaign || null,
             content: utmParams.content || null,
             term: utmParams.term || null,
@@ -589,41 +521,29 @@ class MarketingAttribution {
             device_type: this.getDeviceType()
         };
 
-        // Get stored data
-        const data = this.getStoredData();
-        
-        // Update first and last touch
-        if (!data.firstTouch) {
-            data.firstTouch = touch;
-        }
-        data.lastTouch = touch;
-
-        // Store the updated data
-        this.storeData(data);
-
-        // Update session data
-        this.updateSession(touch);
-
         return touch;
     }
 
+    getStoredData() {
+        return this.safeGetItem(this.STORAGE_KEY) || {};
+    }
+
     storeData(data) {
-        if (!this._storageAvailable) return;
-        
-        try {
-            this.safeSetItem(this.STORAGE_KEY, {
-                firstTouch: data.firstTouch || null,
-                lastTouch: data.lastTouch || null
-            });
-        } catch (e) {
-            this.log('warn', 'Error storing attribution data:', e);
-        }
+        this.safeSetItem(this.STORAGE_KEY, data);
+    }
+
+    getSessionData() {
+        return this.safeGetItem(this.SESSION_KEY) || {};
+    }
+
+    getVisitorData() {
+        return this.safeGetItem(this.VISITOR_KEY) || {};
     }
 
     getAttributionData() {
-        const data = this.getStoredData();
-        const sessionData = this.safeGetItem(this.SESSION_KEY) || {};
-        const visitorData = this.safeGetItem(this.VISITOR_KEY) || {};
+        const data = this.getStoredData() || {};
+        const sessionData = this.getSessionData() || {};
+        const visitorData = this.getVisitorData() || {};
         
         return {
             first_touch: {
@@ -657,132 +577,6 @@ class MarketingAttribution {
         };
     }
 
-    getStoredData() {
-        const now = Date.now();
-        if (this._cache.storageData && 
-            (now - this._cache.lastStorageRead < this.PERFORMANCE.CACHE_TTL) &&
-            !this._cache.storageModified) {
-            return this._cache.storageData;
-        }
-        
-        const data = this.safeGetItem(this.STORAGE_KEY) || {};
-        this._cache.storageData = data;
-        this._cache.lastStorageRead = now;
-        this._cache.storageModified = false;
-        return data;
-    }
-
-    getSessionData() {
-        const now = Date.now();
-        if (this._cache.sessionData && 
-            (now - this._cache.lastSessionRead < this.PERFORMANCE.CACHE_TTL) &&
-            !this._cache.sessionModified) {
-            return this._cache.sessionData;
-        }
-
-        const data = this.safeGetItem(this.SESSION_KEY) || {};
-        this._cache.sessionData = data;
-        this._cache.lastSessionRead = now;
-        this._cache.sessionModified = false;
-        return data;
-    }
-
-    getVisitorData() {
-        const data = this.safeGetItem(this.VISITOR_KEY);
-        if (!data.firstSeen) {
-            data.firstSeen = new Date().toISOString();
-        }
-        if (!data.visitCount) {
-            data.visitCount = 1;
-        }
-        if (!data.touchCount) {
-            data.touchCount = 1;
-        } else {
-            data.touchCount++;
-        }
-        this.safeSetItem(this.VISITOR_KEY, data);
-        return data;
-    }
-
-    safeGetItem(key) {
-        if (!this._storageAvailable) return {};
-        
-        try {
-            const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : {};  
-        } catch (e) {
-            this.log('warn', 'Error reading from storage:', e);
-            return {};  
-        }
-    }
-
-    safeSetItem(key, value) {
-        if (!this._storageAvailable) return false;
-        
-        try {
-            const serialized = Array.isArray(value) ? 
-                JSON.stringify(value) : 
-                this._fastSerialize(value);
-
-            if (serialized.length > 5242880) {
-                this.log('warn', 'Data too large for localStorage');
-                return false;
-            }
-
-            localStorage.setItem(key, serialized);
-            
-            // Mark cache as modified
-            if (key === this.STORAGE_KEY) this._cache.storageModified = true;
-            if (key === this.SESSION_KEY) this._cache.sessionModified = true;
-            
-            return true;
-        } catch (e) {
-            if (e.name === 'QuotaExceededError') {
-                this._cleanupCache();
-                try {
-                    localStorage.setItem(key, JSON.stringify(value));
-                    return true;
-                } catch (e2) {
-                    this.log('warn', 'Storage full, could not save data');
-                }
-            }
-            return false;
-        }
-    }
-
-    _fastSerialize(obj) {
-        try {
-            if (!obj || typeof obj !== 'object') {
-                return JSON.stringify(obj);
-            }
-
-            const pairs = [];
-            for (const key in obj) {
-                if (Object.prototype.hasOwnProperty.call(obj, key) && 
-                    obj[key] !== undefined && 
-                    obj[key] !== null) {
-                    const value = typeof obj[key] === 'object' ? 
-                        JSON.stringify(obj[key]) : 
-                        this._serializeValue(obj[key]);
-                    pairs.push(`"${key}":${value}`);
-                }
-            }
-            return `{${pairs.join(',')}}`;
-        } catch (e) {
-            this.log('warn', 'Fast serialization failed, falling back to JSON.stringify:', e);
-            return JSON.stringify(obj);
-        }
-    }
-
-    _serializeValue(value) {
-        switch (typeof value) {
-            case 'string': return `"${value.replace(/"/g, '\\"')}"`;
-            case 'number':
-            case 'boolean': return String(value);
-            default: return JSON.stringify(value);
-        }
-    }
-
     calculateDaysSinceFirstTouch(firstTouchTime) {
         const currentTime = new Date().getTime();
         const firstTime = new Date(firstTouchTime).getTime();
@@ -790,14 +584,17 @@ class MarketingAttribution {
     }
 
     getFilloutParameters() {
-        const data = this.getStoredData();
-        const visitorData = this.safeGetItem(this.VISITOR_KEY) || {};
+        const data = this.getAttributionData();
+        const sessionData = this.getSessionData();
+        const visitorData = this.getVisitorData();
         const params = {};
-        
-        // Add business profile ID if present
-        const pbid = new URLSearchParams(window.location.search).get('pbid') || '';
-        params.business_profile_id = pbid 
-            ? pbid.replace(/[^a-zA-Z0-9-_]/g, '')  // Sanitize the ID
+
+        // Current page (conversion page)
+        params.conversion_page = window.location.pathname;
+
+        // Session journey
+        params.session_pages = sessionData.pageViews
+            ? sessionData.pageViews.map(pv => pv.path).join(' → ')
             : '';
         
         // Time calculations
@@ -805,11 +602,11 @@ class MarketingAttribution {
 
         // Visitor metrics
         params.visitor_type = params.days_to_convert === 0 ? 'new' : 'returning';
-        params.visits = visitorData.visitCount || 1;
-        params.touches = visitorData.touchCount || 1;
-
-        // Session data
-        params.pages_viewed = this.safeGetItem(this.SESSION_KEY)?.pageViews?.length || 1;
+        params.total_touches = visitorData.touchCount || 1;
+        params.visit_count = visitorData.visitCount || 1;
+        
+        // Session metrics
+        params.pages_in_session = sessionData.pageViews ? sessionData.pageViews.length : 1;
 
         // Device types
         params.conversion_device = this.getDeviceType(); // Device at form submission
@@ -894,6 +691,43 @@ class MarketingAttribution {
         }
     }
 
+    safeSetItem(key, value) {
+        if (!this._storageAvailable) return false;
+        
+        try {
+            const serialized = JSON.stringify(value);
+            if (serialized.length > 5242880) { // 5MB limit
+                this.log('warn', 'Data too large for localStorage');
+                return false;
+            }
+            localStorage.setItem(key, serialized);
+            return true;
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                this.cleanupOldData();
+                try {
+                    localStorage.setItem(key, JSON.stringify(value));
+                    return true;
+                } catch (e2) {
+                    this.log('warn', 'Storage full, could not save data');
+                }
+            }
+            return false;
+        }
+    }
+
+    safeGetItem(key) {
+        if (!this._storageAvailable) return {};
+        
+        try {
+            const item = localStorage.getItem(key);
+            return item ? JSON.parse(item) : {};  
+        } catch (e) {
+            console.warn('Error reading from storage:', e);
+            return {};  
+        }
+    }
+
     validateUtmParams(params) {
         const cleanParams = {};
         const maxLength = 150; // Maximum allowed length for UTM parameters
@@ -913,18 +747,6 @@ class MarketingAttribution {
         });
         
         return cleanParams;
-    }
-
-    updateSession(touch) {
-        const sessionData = this.getSessionData();
-        if (!sessionData.pageViews) {
-            sessionData.pageViews = [];
-        }
-        sessionData.pageViews.push({
-            path: window.location.pathname,
-            timestamp: touch.timestamp
-        });
-        this.safeSetItem(this.SESSION_KEY, sessionData);
     }
 }
 
