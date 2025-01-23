@@ -256,6 +256,9 @@ class MarketingAttribution {
             };
         }
 
+        // Find the first non-null click ID value
+        const clickId = Object.entries(clickIds).find(([_, value]) => value)?.[1] || null;
+
         // Create the touch
         const touch = {
             timestamp: new Date().toISOString(),
@@ -266,7 +269,7 @@ class MarketingAttribution {
             term: utmParams.term || null,
             landing_page: landingPath,
             referrer: referrer || '(direct)',
-            click_id: Object.entries(clickIds).find(([_, value]) => value)?.[0] || null,
+            click_id: clickId,
             device_type: this.getDeviceType()
         };
 
