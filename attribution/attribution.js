@@ -44,23 +44,63 @@ class MarketingAttribution {
             'none': '(none)'
         };
 
-        // Standardized sources for consistency
+        // Add more standardized sources
         this.STANDARD_SOURCES = {
+            // Search Engines
             'google': 'google',
-            'googleads': 'google',
-            'google-ads': 'google',
+            'bing': 'bing',
+            'yahoo': 'yahoo',
+            'duckduckgo': 'duckduckgo',
+            'yandex': 'yandex',
+            'baidu': 'baidu',
+
+            // Social Networks
             'facebook': 'facebook',
-            'fb': 'facebook',
             'instagram': 'instagram',
-            'ig': 'instagram',
             'linkedin': 'linkedin',
             'twitter': 'twitter',
-            'x': 'twitter',
+            'x.com': 'twitter',
+            't.co': 'twitter',
             'tiktok': 'tiktok',
-            'bing': 'bing',
-            'microsoft': 'bing',
-            'yahoo': 'yahoo',
-            'direct': '(direct)'
+            'pinterest': 'pinterest',
+            'youtube': 'youtube',
+            'reddit': 'reddit',
+
+            // Email Providers
+            'gmail': 'email',
+            'outlook': 'email',
+            'yahoo.mail': 'email',
+            'mail.google': 'email',
+            'mail.yahoo': 'email',
+
+            // Direct
+            'direct': '(direct)',
+            '(direct)': '(direct)'
+        };
+
+        // Add path-based medium detection
+        this.PATH_MEDIUM_MAPPING = {
+            facebook: {
+                '/groups/': 'group',
+                '/marketplace/': 'marketplace',
+                '/events/': 'event',
+                '/business/': 'business'
+            },
+            linkedin: {
+                '/company/': 'company',
+                '/jobs/': 'jobs',
+                '/learning/': 'learning',
+                '/groups/': 'group'
+            },
+            twitter: {
+                '/lists/': 'list',
+                '/hashtag/': 'hashtag'
+            },
+            youtube: {
+                '/playlist': 'playlist',
+                '/channel/': 'channel',
+                '/shorts/': 'shorts'
+            }
         };
 
         this.ATTRIBUTION_WINDOW = {
@@ -306,14 +346,96 @@ class MarketingAttribution {
         try {
             const referrerUrl = this.createUrl(referrer);
             const referrerDomain = referrerUrl.hostname.replace('www.', '');
+            const path = referrerUrl.pathname;
 
-            if (referrerDomain.includes('google')) return { source: 'google', medium: 'organic' };
-            if (referrerDomain.includes('bing')) return { source: 'bing', medium: 'organic' };
-            if (referrerDomain.includes('facebook')) return { source: 'facebook', medium: 'social' };
-            if (referrerDomain.includes('instagram')) return { source: 'instagram', medium: 'social' };
-            if (referrerDomain.includes('linkedin')) return { source: 'linkedin', medium: 'social' };
-            
-            return { source: referrerDomain, medium: 'referral' };
+            // 1. Search Engines
+            const searchEngines = {
+                'google': ['google.', 'google.co'],
+                'bing': ['bing.'],
+                'yahoo': ['search.yahoo.'],
+                'duckduckgo': ['duckduckgo.'],
+                'yandex': ['yandex.'],
+                'baidu': ['baidu.']
+            };
+
+            for (const [engine, domains] of Object.entries(searchEngines)) {
+                if (domains.some(domain => referrerDomain.includes(domain))) {
+                    // Special case for Google Maps
+                    if (engine === 'google' && path.startsWith('/maps')) {
+                        return { source: 'google', medium: 'maps' };
+                    }
+                    return { source: engine, medium: 'organic' };
+                }
+            }
+
+            // 2. Social Networks with path-based medium
+            const socialDomains = {
+                'facebook.com': 'facebook',
+                'instagram.com': 'instagram',
+                'linkedin.com': 'linkedin',
+                'twitter.com': 'twitter',
+                'x.com': 'twitter',
+                't.co': 'twitter',
+                'tiktok.com': 'tiktok',
+                'pinterest.com': 'pinterest',
+                'youtube.com': 'youtube',
+                'reddit.com': 'reddit'
+            };
+
+            for (const [domain, source] of Object.entries(socialDomains)) {
+                if (referrerDomain.includes(domain)) {
+                    // Check for specific paths that indicate different mediums
+                    const pathMappings = this.PATH_MEDIUM_MAPPING[source];
+                    if (pathMappings) {
+                        for (const [pathPrefix, medium] of Object.entries(pathMappings)) {
+                            if (path.includes(pathPrefix)) {
+                                return { source, medium };
+                            }
+                        }
+                    }
+                    return { source, medium: 'social' };
+                }
+            }
+
+            // 3. Email Providers
+            const emailDomains = [
+                'mail.google.com',
+                'outlook.com',
+                'outlook.live.com',
+                'outlook.office365.com',
+                'mail.yahoo.com',
+                'mail.proton.me'
+            ];
+
+            if (emailDomains.some(domain => referrerDomain.includes(domain))) {
+                return { source: 'email', medium: 'email' };
+            }
+
+            // 4. News and Media Sites
+            const newsSites = {
+                'medium.com': 'medium',
+                'news.google.com': 'google_news',
+                'flipboard.com': 'flipboard',
+                'feedly.com': 'feedly'
+            };
+
+            for (const [domain, source] of Object.entries(newsSites)) {
+                if (referrerDomain.includes(domain)) {
+                    return { source, medium: 'news' };
+                }
+            }
+
+            // 5. Default to referral for unknown sources
+            // Clean the domain (remove common subdomains)
+            const cleanDomain = referrerDomain
+                .replace(/^(mail|email|blog|shop|store|support|help|docs|developer|dev|api|cdn|static)\./i, '')
+                .replace(/\.(cdn|amazonaws|cloudfront|herokuapp)\.[^.]+$/, '');
+
+            return { 
+                source: this.sanitizeAttributionValue(cleanDomain, this.STANDARD_SOURCES) || cleanDomain,
+                medium: 'referral'
+            };
+
         } catch (e) {
             this.log('warn', 'Error processing referrer:', e);
             return this.getDirectAttribution();
