@@ -29,7 +29,17 @@ class MarketingAttribution {
             hostname: window.location.hostname,
             supportsURLAPI: typeof URL === 'function',
             searchEnginePatterns: this._compileSearchPatterns(),
-            domainMaps: this._compileDomainMaps()
+            domainMaps: this._compileDomainMaps(),
+            lastCleanup: Date.now(),
+            lastStorageCheck: Date.now(),
+            lastStorageRead: Date.now(),
+            lastSessionRead: Date.now(),
+            storageData: null,
+            sessionData: null,
+            visitorData: null,
+            currentPageview: null,
+            storageModified: false,
+            sessionModified: false
         };
 
         // Standardized mediums for consistency
@@ -136,6 +146,15 @@ class MarketingAttribution {
             '(none)': 8         // Lowest priority
         };
 
+        this.PERFORMANCE = {
+            CLEANUP_INTERVAL: 5 * 60 * 1000, // Run cleanup every 5 minutes
+            STORAGE_CHECK_INTERVAL: 60 * 1000, // Check storage availability every minute
+            CACHE_TTL: 30 * 1000, // Cache TTL for storage data (30 seconds)
+            MAX_BATCH_SIZE: 10, // Maximum number of touches to process at once
+            MAX_CACHE_ITEMS: 1000,
+            MAX_CACHE_SIZE: 1024 * 1024 // 1MB
+        };
+
         this._storageAvailable = this.isStorageAvailable();
         if (!this._storageAvailable) {
             this.log('warn', 'localStorage is not available. Attribution tracking will be limited.');
@@ -145,6 +164,34 @@ class MarketingAttribution {
 
         this.initializeTracking();
         this.initializeSession();
+
+        // Schedule periodic cache cleanup
+        if (typeof window !== 'undefined') {
+            this._cleanupInterval = setInterval(() => this._cleanupCache(), this.PERFORMANCE.CLEANUP_INTERVAL);
+        }
+    }
+
+    destroy() {
+        if (this._cleanupInterval) {
+            clearInterval(this._cleanupInterval);
+        }
+        this._cache = null;
+    }
+
+    _cleanupCache() {
+        try {
+            const cacheSize = JSON.stringify(this._cache).length;
+            if (cacheSize > this.PERFORMANCE.MAX_CACHE_SIZE) {
+                // Reset non-critical cache items
+                this._cache.storageData = null;
+                this._cache.sessionData = null;
+                this._cache.currentPageview = null;
+                this._cache.storageModified = true;
+                this._cache.sessionModified = true;
+            }
+        } catch (e) {
+            this.log('warn', 'Error during cache cleanup:', e);
+        }
     }
 
     _compileSearchPatterns() {
@@ -204,22 +251,53 @@ class MarketingAttribution {
     }
 
     createUrl(url) {
+        if (!url) return this._createUrlFromLocation();
+        
         if (this._cache.supportsURLAPI) {
             try {
                 return url instanceof URL ? url : new URL(url);
             } catch (e) {
                 this.log('warn', 'Invalid URL:', url);
+                return this._createUrlFromLocation();
             }
         }
         
-        // Fallback for older browsers or invalid URLs
-        const a = document.createElement('a');
-        a.href = url || window.location.href;
-        return {
-            pathname: a.pathname.replace(/^([^/])/, '/$1'),
-            hostname: a.hostname,
-            search: a.search
-        };
+        return this._createUrlFromAnchor(url);
+    }
+
+    _createUrlFromLocation() {
+        try {
+            return {
+                pathname: window.location.pathname || '/',
+                hostname: this._cache.hostname || window.location.hostname,
+                search: window.location.search || '',
+                protocol: window.location.protocol
+            };
+        } catch (e) {
+            this.log('warn', 'Error creating URL from location:', e);
+            return {
+                pathname: '/',
+                hostname: this._cache.hostname || '',
+                search: '',
+                protocol: 'https:'
+            };
+        }
+    }
+
+    _createUrlFromAnchor(url) {
+        try {
+            const a = document.createElement('a');
+            a.href = url || window.location.href;
+            return {
+                pathname: a.pathname.replace(/^([^/])/, '/$1'),
+                hostname: a.hostname,
+                search: a.search,
+                protocol: a.protocol
+            };
+        } catch (e) {
+            this.log('warn', 'Error creating URL from anchor:', e);
+            return this._createUrlFromLocation();
+        }
     }
 
     getDeviceType() {
@@ -525,19 +603,130 @@ class MarketingAttribution {
     }
 
     getStoredData() {
-        return this.safeGetItem(this.STORAGE_KEY) || {};
-    }
-
-    storeData(data) {
-        this.safeSetItem(this.STORAGE_KEY, data);
+        const now = Date.now();
+        if (this._cache.storageData && 
+            (now - this._cache.lastStorageRead < this.PERFORMANCE.CACHE_TTL) &&
+            !this._cache.storageModified) {
+            return this._cache.storageData;
+        }
+        
+        const data = this.safeGetItem(this.STORAGE_KEY) || {};
+        this._cache.storageData = data;
+        this._cache.lastStorageRead = now;
+        this._cache.storageModified = false;
+        return data;
     }
 
     getSessionData() {
-        return this.safeGetItem(this.SESSION_KEY) || {};
+        const now = Date.now();
+        if (this._cache.sessionData && 
+            (now - this._cache.lastSessionRead < this.PERFORMANCE.CACHE_TTL) &&
+            !this._cache.sessionModified) {
+            return this._cache.sessionData;
+        }
+
+        const data = this.safeGetItem(this.SESSION_KEY) || {};
+        this._cache.sessionData = data;
+        this._cache.lastSessionRead = now;
+        this._cache.sessionModified = false;
+        return data;
     }
 
-    getVisitorData() {
-        return this.safeGetItem(this.VISITOR_KEY) || {};
+    processTouchBatch(touches) {
+        if (!Array.isArray(touches) || touches.length === 0) {
+            return [];
+        }
+
+        const batchSize = Math.min(touches.length, this.PERFORMANCE.MAX_BATCH_SIZE);
+        const processedTouches = [];
+        let storageModified = false;
+
+        // Process in chunks to avoid blocking
+        for (let i = 0; i < batchSize; i++) {
+            try {
+                const touch = this.createTouch(touches[i]);
+                if (touch) {
+                    processedTouches.push(touch);
+                    storageModified = true;
+                }
+            } catch (e) {
+                this.log('warn', `Error processing touch at index ${i}:`, e);
+            }
+        }
+
+        // Update cache status
+        if (storageModified) {
+            this._cache.storageModified = true;
+        }
+
+        return processedTouches;
+    }
+
+    safeSetItem(key, value) {
+        if (!this._storageAvailable) return false;
+        
+        try {
+            const serialized = Array.isArray(value) ? 
+                JSON.stringify(value) : 
+                this._fastSerialize(value);
+
+            if (serialized.length > 5242880) {
+                this.log('warn', 'Data too large for localStorage');
+                return false;
+            }
+
+            localStorage.setItem(key, serialized);
+            
+            // Mark cache as modified
+            if (key === this.STORAGE_KEY) this._cache.storageModified = true;
+            if (key === this.SESSION_KEY) this._cache.sessionModified = true;
+            
+            return true;
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                this._cleanupCache();
+                try {
+                    localStorage.setItem(key, JSON.stringify(value));
+                    return true;
+                } catch (e2) {
+                    this.log('warn', 'Storage full, could not save data');
+                }
+            }
+            return false;
+        }
+    }
+
+    _fastSerialize(obj) {
+        try {
+            if (!obj || typeof obj !== 'object') {
+                return JSON.stringify(obj);
+            }
+
+            const pairs = [];
+            for (const key in obj) {
+                if (Object.prototype.hasOwnProperty.call(obj, key) && 
+                    obj[key] !== undefined && 
+                    obj[key] !== null) {
+                    const value = typeof obj[key] === 'object' ? 
+                        JSON.stringify(obj[key]) : 
+                        this._serializeValue(obj[key]);
+                    pairs.push(`"${key}":${value}`);
+                }
+            }
+            return `{${pairs.join(',')}}`;
+        } catch (e) {
+            this.log('warn', 'Fast serialization failed, falling back to JSON.stringify:', e);
+            return JSON.stringify(obj);
+        }
+    }
+
+    _serializeValue(value) {
+        switch (typeof value) {
+            case 'string': return `"${value.replace(/"/g, '\\"')}"`;
+            case 'number':
+            case 'boolean': return String(value);
+            default: return JSON.stringify(value);
+        }
     }
 
     getAttributionData() {
@@ -688,43 +877,6 @@ class MarketingAttribution {
             if (!(e instanceof TypeError)) {
                 this.log('warn', 'Error cleaning up old data:', e);
             }
-        }
-    }
-
-    safeSetItem(key, value) {
-        if (!this._storageAvailable) return false;
-        
-        try {
-            const serialized = JSON.stringify(value);
-            if (serialized.length > 5242880) { // 5MB limit
-                this.log('warn', 'Data too large for localStorage');
-                return false;
-            }
-            localStorage.setItem(key, serialized);
-            return true;
-        } catch (e) {
-            if (e.name === 'QuotaExceededError') {
-                this.cleanupOldData();
-                try {
-                    localStorage.setItem(key, JSON.stringify(value));
-                    return true;
-                } catch (e2) {
-                    this.log('warn', 'Storage full, could not save data');
-                }
-            }
-            return false;
-        }
-    }
-
-    safeGetItem(key) {
-        if (!this._storageAvailable) return {};
-        
-        try {
-            const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : {};  
-        } catch (e) {
-            console.warn('Error reading from storage:', e);
-            return {};  
         }
     }
 
