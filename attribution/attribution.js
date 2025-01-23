@@ -15,11 +15,21 @@ class MarketingAttribution {
         this._mockData = mockData;
         this.debug = options.debug || false;
 
+        // Pre-compile regexes for better performance
+        this._REGEX = {
+            mobile: /Mobile|Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i,
+            tablet: /Tablet|iPad/i,
+            cleanDomain: /^(mail|email|blog|shop|store|support|help|docs|developer|dev|api|cdn|static)\./i,
+            cloudDomain: /\.(cdn|amazonaws|cloudfront|herokuapp)\.[^.]+$/
+        };
+
         // Cache frequently accessed values
         this._cache = {
             deviceType: null,
             hostname: window.location.hostname,
-            supportsURLAPI: typeof URL === 'function'
+            supportsURLAPI: typeof URL === 'function',
+            searchEnginePatterns: this._compileSearchPatterns(),
+            domainMaps: this._compileDomainMaps()
         };
 
         // Standardized mediums for consistency
@@ -137,6 +147,56 @@ class MarketingAttribution {
         this.initializeSession();
     }
 
+    _compileSearchPatterns() {
+        // Pre-compute search engine patterns
+        const patterns = {};
+        const searchEngines = {
+            'google': ['google.', 'google.co'],
+            'bing': ['bing.'],
+            'yahoo': ['search.yahoo.'],
+            'duckduckgo': ['duckduckgo.'],
+            'yandex': ['yandex.'],
+            'baidu': ['baidu.']
+        };
+
+        for (const [engine, domains] of Object.entries(searchEngines)) {
+            patterns[engine] = new RegExp(domains.map(d => d.replace('.', '\\.')).join('|'));
+        }
+        return patterns;
+    }
+
+    _compileDomainMaps() {
+        // Pre-compute domain maps for faster lookups
+        return {
+            social: new Map(Object.entries({
+                'facebook.com': 'facebook',
+                'instagram.com': 'instagram',
+                'linkedin.com': 'linkedin',
+                'twitter.com': 'twitter',
+                'x.com': 'twitter',
+                't.co': 'twitter',
+                'tiktok.com': 'tiktok',
+                'pinterest.com': 'pinterest',
+                'youtube.com': 'youtube',
+                'reddit.com': 'reddit'
+            })),
+            email: new Set([
+                'mail.google.com',
+                'outlook.com',
+                'outlook.live.com',
+                'outlook.office365.com',
+                'mail.yahoo.com',
+                'mail.proton.me'
+            ]),
+            news: new Map(Object.entries({
+                'medium.com': 'medium',
+                'news.google.com': 'google_news',
+                'flipboard.com': 'flipboard',
+                'feedly.com': 'feedly'
+            }))
+        };
+    }
+
     log(level, ...args) {
         if (this.debug || level === 'error' || level === 'warn') {
             console[level](...args);
@@ -166,8 +226,8 @@ class MarketingAttribution {
         if (this._cache.deviceType) return this._cache.deviceType;
 
         const ua = navigator.userAgent;
-        const mobile = /Mobile|Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(ua);
-        const tablet = /Tablet|iPad/i.test(ua);
+        const mobile = this._REGEX.mobile.test(ua);
+        const tablet = this._REGEX.tablet.test(ua);
         
         let result;
         if (tablet || (mobile && window.innerWidth >= 768)) {
@@ -348,18 +408,9 @@ class MarketingAttribution {
             const referrerDomain = referrerUrl.hostname.replace('www.', '');
             const path = referrerUrl.pathname;
 
-            // 1. Search Engines
-            const searchEngines = {
-                'google': ['google.', 'google.co'],
-                'bing': ['bing.'],
-                'yahoo': ['search.yahoo.'],
-                'duckduckgo': ['duckduckgo.'],
-                'yandex': ['yandex.'],
-                'baidu': ['baidu.']
-            };
-
-            for (const [engine, domains] of Object.entries(searchEngines)) {
-                if (domains.some(domain => referrerDomain.includes(domain))) {
+            // 1. Search Engines - Using pre-compiled patterns
+            for (const [engine, pattern] of Object.entries(this._cache.searchEnginePatterns)) {
+                if (pattern.test(referrerDomain)) {
                     // Special case for Google Maps
                     if (engine === 'google' && path.startsWith('/maps')) {
                         return { source: 'google', medium: 'maps' };
@@ -368,68 +419,37 @@ class MarketingAttribution {
                 }
             }
 
-            // 2. Social Networks with path-based medium
-            const socialDomains = {
-                'facebook.com': 'facebook',
-                'instagram.com': 'instagram',
-                'linkedin.com': 'linkedin',
-                'twitter.com': 'twitter',
-                'x.com': 'twitter',
-                't.co': 'twitter',
-                'tiktok.com': 'tiktok',
-                'pinterest.com': 'pinterest',
-                'youtube.com': 'youtube',
-                'reddit.com': 'reddit'
-            };
-
-            for (const [domain, source] of Object.entries(socialDomains)) {
-                if (referrerDomain.includes(domain)) {
-                    // Check for specific paths that indicate different mediums
-                    const pathMappings = this.PATH_MEDIUM_MAPPING[source];
-                    if (pathMappings) {
-                        for (const [pathPrefix, medium] of Object.entries(pathMappings)) {
-                            if (path.includes(pathPrefix)) {
-                                return { source, medium };
-                            }
+            // 2. Social Networks - Using Map for O(1) lookup
+            const socialSource = this._cache.domainMaps.social.get(referrerDomain);
+            if (socialSource) {
+                const pathMappings = this.PATH_MEDIUM_MAPPING[socialSource];
+                if (pathMappings) {
+                    // Use Object.entries once and cache
+                    const entries = Object.entries(pathMappings);
+                    for (const [pathPrefix, medium] of entries) {
+                        if (path.includes(pathPrefix)) {
+                            return { source: socialSource, medium };
                         }
                     }
-                    return { source, medium: 'social' };
                 }
+                return { source: socialSource, medium: 'social' };
             }
 
-            // 3. Email Providers
-            const emailDomains = [
-                'mail.google.com',
-                'outlook.com',
-                'outlook.live.com',
-                'outlook.office365.com',
-                'mail.yahoo.com',
-                'mail.proton.me'
-            ];
-
-            if (emailDomains.some(domain => referrerDomain.includes(domain))) {
+            // 3. Email Providers - Using Set for O(1) lookup
+            if (this._cache.domainMaps.email.has(referrerDomain)) {
                 return { source: 'email', medium: 'email' };
             }
 
-            // 4. News and Media Sites
-            const newsSites = {
-                'medium.com': 'medium',
-                'news.google.com': 'google_news',
-                'flipboard.com': 'flipboard',
-                'feedly.com': 'feedly'
-            };
-
-            for (const [domain, source] of Object.entries(newsSites)) {
-                if (referrerDomain.includes(domain)) {
-                    return { source, medium: 'news' };
-                }
+            // 4. News Sites - Using Map for O(1) lookup
+            const newsSource = this._cache.domainMaps.news.get(referrerDomain);
+            if (newsSource) {
+                return { source: newsSource, medium: 'news' };
             }
 
-            // 5. Default to referral for unknown sources
-            // Clean the domain (remove common subdomains)
+            // 5. Default to referral - Using pre-compiled regex
             const cleanDomain = referrerDomain
-                .replace(/^(mail|email|blog|shop|store|support|help|docs|developer|dev|api|cdn|static)\./i, '')
-                .replace(/\.(cdn|amazonaws|cloudfront|herokuapp)\.[^.]+$/, '');
+                .replace(this._REGEX.cleanDomain, '')
+                .replace(this._REGEX.cloudDomain, '');
 
             return { 
                 source: this.sanitizeAttributionValue(cleanDomain, this.STANDARD_SOURCES) || cleanDomain,
