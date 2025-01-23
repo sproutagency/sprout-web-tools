@@ -97,36 +97,26 @@ class MarketingAttribution {
     }
 
     initializeTracking() {
-        console.log('Initializing tracking...');
         const currentTouch = this.createTouch();
-        console.log('Current touch data:', currentTouch);
         const storedData = this.getStoredData() || {}; 
-        console.log('Previously stored attribution data:', storedData);
 
         // Set first touch if it doesn't exist
         if (!storedData.firstTouch) {
-            console.log('Setting first touch attribution...');
             storedData.firstTouch = currentTouch;
         }
 
-        // Update last touch if:
-        // 1. It's a new session AND
-        // 2. The current touch has equal or higher priority
+        // Update last touch if needed
         const isNewSession = this.initializeSession();
         if (isNewSession && this.shouldUpdateLastTouch(currentTouch, storedData.lastTouch)) {
-            console.log('Updating last touch attribution...');
             storedData.lastTouch = currentTouch;
         }
 
         this.storeData(storedData);
-        console.log('Final stored attribution data:', this.getStoredData());
     }
 
     initializeSession() {
-        console.log('Initializing session...');
         const isNew = this.isNewSession();
         let sessionData = this.getSessionData();
-        console.log('Current session data:', sessionData);
         
         if (!sessionData.pageViews || isNew) {
             sessionData = {
@@ -137,12 +127,10 @@ class MarketingAttribution {
                 }]
             };
         } else {
-            // Check if this is a refresh (same path as last view)
             const lastPageView = sessionData.pageViews[sessionData.pageViews.length - 1];
             const isRefresh = lastPageView && lastPageView.path === window.location.pathname;
             
             if (!isRefresh) {
-                // Only add to session if it's a new page, not a refresh
                 sessionData.pageViews.push({
                     path: window.location.pathname,
                     timestamp: new Date().toISOString()
@@ -160,7 +148,6 @@ class MarketingAttribution {
                 touchCount: 1
             };
         } else if (isNew) {
-            // Only increment counts on new sessions
             visitorData.visitCount++;
             visitorData.touchCount++;
         }
@@ -455,7 +442,6 @@ class MarketingAttribution {
 
     cleanupOldData() {
         try {
-            // Clean up old sessions
             const sessionData = this.getSessionData() || {};
             if (sessionData?.startTime) {
                 const sessionAge = Date.now() - new Date(sessionData.startTime).getTime();
@@ -464,13 +450,14 @@ class MarketingAttribution {
                 }
             }
 
-            // Limit pageviews
             if (sessionData?.pageViews && sessionData.pageViews.length > this.MAX_PAGEVIEWS) {
                 sessionData.pageViews = sessionData.pageViews.slice(-this.MAX_PAGEVIEWS);
                 this.safeSetItem(this.SESSION_KEY, sessionData);
             }
         } catch (e) {
-            console.warn('Error cleaning up old data:', e);
+            if (!(e instanceof TypeError)) {
+                console.warn('Error cleaning up old data:', e);
+            }
         }
     }
 
@@ -481,14 +468,13 @@ class MarketingAttribution {
             localStorage.setItem(key, JSON.stringify(value));
             return true;
         } catch (e) {
-            // If storage is full, try to clear some space
             if (e.name === 'QuotaExceededError') {
                 this.cleanupOldData();
                 try {
                     localStorage.setItem(key, JSON.stringify(value));
                     return true;
                 } catch (e2) {
-                    console.warn('Storage full, could not save data:', e2);
+                    console.warn('Storage full, could not save data');
                 }
             }
             return false;
