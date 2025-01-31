@@ -59,9 +59,10 @@ class MarketingTracker {
     ];
 
     initializeTracking() {
-        const currentData = this.createTrackingData();
         const storedData = this.getStoredData();
+        const params = new URLSearchParams(window.location.search);
         
+        // Store landing page if first page in session
         if (!sessionStorage.getItem(this.SESSION_LANDING_KEY)) {
             sessionStorage.setItem(this.SESSION_LANDING_KEY, window.location.pathname);
         }
@@ -70,17 +71,37 @@ class MarketingTracker {
         if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
             (currentReferrer && !this.isInternalReferrer(currentReferrer))) {
             sessionStorage.setItem(this.SESSION_REFERRER_KEY, currentReferrer);
-            localStorage.setItem(this.BACKUP_REFERRER_KEY, currentReferrer); // Backup referrer
+            localStorage.setItem(this.BACKUP_REFERRER_KEY, currentReferrer);
         } else if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) && localStorage.getItem(this.BACKUP_REFERRER_KEY)) {
-            // Restore from backup if session storage is cleared
             sessionStorage.setItem(this.SESSION_REFERRER_KEY, localStorage.getItem(this.BACKUP_REFERRER_KEY));
         }
-        
-        storedData.lastInteraction = {
-            ...currentData,
-            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-            referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
-        };
+
+        // Only update attribution if:
+        // 1. No previous data exists, or
+        // 2. We have UTM parameters or gclid, or
+        // 3. This is a new session with external referrer
+        const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
+        const isNewSession = !sessionStorage.getItem(this.SESSION_LANDING_KEY);
+        const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
+
+        if (!storedData.lastInteraction || hasUtmParams || (isNewSession && hasExternalReferrer)) {
+            this.debugLog('Updating attribution data due to:', {
+                hasUtmParams,
+                isNewSession,
+                hasExternalReferrer
+            });
+
+            const currentData = this.createTrackingData();
+            storedData.lastInteraction = {
+                ...currentData,
+                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
+            };
+        } else {
+            this.debugLog('Preserving existing attribution data');
+        }
+
+        // Always increment visit count
         storedData.visitCount = (storedData.visitCount || 0) + 1;
         
         this.storeData(storedData);
