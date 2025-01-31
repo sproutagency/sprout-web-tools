@@ -150,11 +150,8 @@ class MarketingTracker {
         
         // Get campaign value directly, only clean it for safety
         let campaign = params.get('utm_campaign');
-        this.debugLog('Initial campaign value:', campaign);
-        
         if (campaign) {
             campaign = campaign.substring(0, this.MAX_VALUE_LENGTH).replace(/[^\w\s-_.]/g, '');
-            this.debugLog('Cleaned campaign value:', campaign);
         }
         
         // Check for LSA traffic
@@ -171,6 +168,13 @@ class MarketingTracker {
             this.debugLog('Campaign set to GMB from google/organic params');
         }
         
+        // Get gclid and clean it
+        let gclid = params.get('gclid');
+        if (gclid) {
+            gclid = gclid.substring(0, this.MAX_VALUE_LENGTH).replace(/[^\w-]/g, '');
+            this.debugLog('Found gclid:', gclid);
+        }
+        
         const data = {
             timestamp: new Date().toISOString(),
             source: this.determineSource(params, referrer),
@@ -179,7 +183,7 @@ class MarketingTracker {
             term: this.sanitizeValue(params.get('utm_term'), {}),
             landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY) || window.location.pathname,
             referrer: referrer || '(direct)',
-            gclid: params.get('gclid'),
+            gclid: gclid || '',
             device: this.getDeviceType()
         };
 
