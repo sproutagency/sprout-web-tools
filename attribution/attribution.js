@@ -313,8 +313,7 @@ class MarketingTracker {
             referrer: data.lastInteraction?.referrer || '(direct)',
             gclid: data.lastInteraction?.gclid || '',
             device: data.lastInteraction?.device || this.getDeviceType(),
-            visit_count: data.visitCount || 1,
-            timestamp: this.formatTimestamp(new Date())
+            visit_count: data.visitCount || 1
         };
 
         this.debugLog('Returning form attributes:', attributes);
