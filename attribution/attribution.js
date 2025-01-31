@@ -183,13 +183,13 @@ class MarketingTracker {
         // Determine source and medium based on current touch
         let source, medium;
         
-        // Priority 1: UTM Parameters
-        if (params.get('utm_source')) {
+        // Priority 1: UTM Parameters (if either utm_source OR utm_medium is present)
+        if (params.get('utm_source') || params.get('utm_medium')) {
             source = this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
             medium = this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
             this.debugLog('Source/Medium from UTM:', { source, medium });
         }
-        // Priority 2: GCLID
+        // Priority 2: GCLID (only if no UTM parameters)
         else if (gclid) {
             source = 'google';
             medium = 'cpc';
@@ -211,8 +211,8 @@ class MarketingTracker {
         
         const data = {
             timestamp: new Date().toISOString(),
-            source: source,
-            medium: medium,
+            source: source || '(direct)',  // Ensure we never have null source
+            medium: medium || '(none)',    // Ensure we never have null medium
             campaign: campaign || '',
             term: params.get('utm_term') || '',
             landing_page: window.location.pathname,
