@@ -94,7 +94,7 @@ class MarketingTracker {
                           !storedData.lastInteraction && 
                           !sessionStorage.getItem(this.SESSION_LANDING_KEY);
 
-        // Update attribution data based on visit type
+        // Update attribution data based on the type of visit
         if (hasUtmParams) {
             this.debugLog('Updating attribution: UTM parameters detected');
             storedData.lastInteraction = {
