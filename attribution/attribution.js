@@ -172,7 +172,7 @@ class MarketingTracker {
         }
         
         return {
-            timestamp: new Date().toISOString(),
+            timestamp: this.formatTimestamp(new Date()),
             source: source || '(direct)',
             medium: medium || '(none)',
             campaign: campaign || '',
@@ -181,6 +181,17 @@ class MarketingTracker {
             gclid: gclid || '',
             device: this.getDeviceType()
         };
+    }
+
+    formatTimestamp(date) {
+        return date.toLocaleString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
     }
 
     determineReferrer(parsedReferrer) {
@@ -303,7 +314,7 @@ class MarketingTracker {
             gclid: data.lastInteraction?.gclid || '',
             device: data.lastInteraction?.device || this.getDeviceType(),
             visit_count: data.visitCount || 1,
-            timestamp: new Date().toISOString()
+            timestamp: this.formatTimestamp(new Date())
         };
 
         this.debugLog('Returning form attributes:', attributes);
