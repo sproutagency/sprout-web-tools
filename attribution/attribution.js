@@ -82,8 +82,17 @@ class MarketingTracker {
         // Check for attribution sources
         const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
         const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
-        const isDirect = !hasUtmParams && !currentReferrer;
         const isInternalNavigation = currentReferrer && this.isInternalReferrer(currentReferrer);
+        
+        // Only treat as direct if:
+        // 1. No UTM params
+        // 2. No referrer
+        // 3. No existing attribution data
+        // 4. Not in an existing session
+        const isNewDirect = !hasUtmParams && 
+                          !currentReferrer && 
+                          !storedData.lastInteraction && 
+                          !sessionStorage.getItem(this.SESSION_LANDING_KEY);
 
         // Update attribution data based on visit type
         if (hasUtmParams) {
@@ -100,8 +109,8 @@ class MarketingTracker {
                 landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
                 referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
             };
-        } else if (isDirect && !isInternalNavigation) {
-            this.debugLog('Updating attribution: Direct visit');
+        } else if (isNewDirect) {
+            this.debugLog('Updating attribution: New direct visit');
             storedData.lastInteraction = {
                 ...currentData,
                 landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
@@ -112,9 +121,9 @@ class MarketingTracker {
                 term: '',
                 gclid: ''
             };
-        } else if (isInternalNavigation) {
-            this.debugLog('Preserving attribution: Internal navigation');
-            // Keep existing attribution data, just update the conversion page
+        } else {
+            // Either internal navigation or page refresh - preserve existing attribution
+            this.debugLog('Preserving attribution: Internal navigation or refresh');
             if (storedData.lastInteraction) {
                 storedData.lastInteraction = {
                     ...storedData.lastInteraction,
