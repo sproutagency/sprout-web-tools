@@ -36,6 +36,25 @@ class MarketingTracker {
         'direct': '(direct)'
     };
 
+    SEARCH_ENGINE_DOMAINS = [
+        'google', 'bing', 'yahoo', 'duckduckgo', 'yandex',
+        'baidu', 'yandex', 'naver', 'ask', 'duckduckgo',
+        'ecosia', 'qwant', 'startpage'
+    ];
+
+    SOCIAL_DOMAINS = [
+        'facebook', 'instagram', 'linkedin', 'twitter',
+        'x.com', 'youtube', 'youtu.be', 'tiktok', 'pinterest',
+        'reddit', 'tumblr', 'medium'
+    ];
+
+    INTERNATIONAL_TLDS = [
+        'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'io', 'co',
+        'me', 'uk', 'de', 'fr', 'es', 'it', 'nl', 'ru', 'cn', 'jp',
+        'br', 'au', 'in', 'mx', 'ca', 'ch', 'at', 'be', 'dk', 'pl',
+        'no', 'se', 'fi', 'cz', 'pt', 'nz', 'kr', 'tw', 'sg', 'ae'
+    ];
+
     initializeTracking() {
         const currentData = this.createTrackingData();
         const storedData = this.getStoredData();
@@ -70,17 +89,44 @@ class MarketingTracker {
         }
     }
 
+    parseReferrer(referrer) {
+        try {
+            if (!referrer) return null;
+            const referrerUrl = new URL(referrer);
+            return {
+                url: referrerUrl,
+                hostname: referrerUrl.hostname.replace('www.', ''),
+                params: new URLSearchParams(referrerUrl.search)
+            };
+        } catch (e) {
+            console.error('Error parsing referrer:', e);
+            return null;
+        }
+    }
+
     createTrackingData() {
         const params = new URLSearchParams(window.location.search);
         const referrer = sessionStorage.getItem(this.SESSION_REFERRER_KEY) || document.referrer;
+        const parsedReferrer = this.parseReferrer(referrer);
+        
+        let campaign = params.get('utm_campaign') || '';
+        
+        // Check for LSA traffic
+        if (parsedReferrer && !campaign && parsedReferrer.hostname.includes('localservices')) {
+            campaign = 'lsa';
+        }
+
+        // Check for GMB traffic
+        if (!campaign && params.get('utm_source')?.toLowerCase() === 'google' && 
+            params.get('utm_medium')?.toLowerCase() === 'organic') {
+            campaign = 'gmb';
+        }
         
         return {
             timestamp: new Date().toISOString(),
             source: this.determineSource(params, referrer),
             medium: this.determineMedium(params, referrer),
-            campaign: params.get('utm_campaign')?.toLowerCase() === 'lsa' 
-                    ? 'lsa' 
-                    : params.get('utm_campaign'),
+            campaign: campaign,
             term: params.get('utm_term'),
             landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY) || window.location.pathname,
             referrer: referrer || '(direct)',
@@ -90,127 +136,92 @@ class MarketingTracker {
     }
 
     determineSource(params, referrer) {
+        // Priority 1: UTM Source from URL
         if (params.get('utm_source')) {
             return this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
         }
 
+        // Priority 2: Google Ads, LSA, or GMB
         if (params.get('gclid') || 
-            params.get('utm_campaign')?.toLowerCase() === 'lsa' ||
+            params.get('utm_campaign')?.toLowerCase() === 'lsa' || 
             params.get('utm_campaign')?.toLowerCase() === 'gmb') {
             return 'google';
         }
 
-        try {
-            if (referrer) {
-                const referrerUrl = new URL(referrer);
-                const referrerParams = new URLSearchParams(referrerUrl.search);
-                
-                if (referrerParams.get('utm_source')) {
-                    return this.sanitizeValue(referrerParams.get('utm_source'), this.STANDARD_SOURCES);
-                }
+        const parsedReferrer = this.parseReferrer(referrer);
+        if (!parsedReferrer) return '(direct)';
 
-                if (referrerParams.get('utm_campaign')?.toLowerCase() === 'gmb') {
-                    return 'google';
-                }
-
-                if (referrerUrl.hostname.includes('localservices')) {
-                    return 'google';
-                }
-
-                const hostname = referrerUrl.hostname.replace('www.', '');
-                const searchEngines = {
-                    'google.com': 'google',
-                    'bing.com': 'bing',
-                    'yahoo.com': 'yahoo',
-                    'duckduckgo.com': 'duckduckgo',
-                    'yandex.com': 'yandex'
-                };
-                
-                if (searchEngines[hostname]) {
-                    return searchEngines[hostname];
-                }
-
-                const socialMap = {
-                    'facebook.com': 'facebook',
-                    'instagram.com': 'instagram',
-                    'linkedin.com': 'linkedin',
-                    'twitter.com': 'x',
-                    'x.com': 'x',
-                    'youtube.com': 'youtube',
-                    'youtu.be': 'youtube',
-                    'tiktok.com': 'tiktok'
-                };
-
-                if (socialMap[hostname]) {
-                    return socialMap[hostname];
-                }
-
-                return hostname.replace(/\.(com|org|net|edu|gov|mil|int|io|co|me|uk|de|fr)$/i, '');
-            }
-        } catch (e) {
-            console.error('Error parsing referrer:', e);
+        // Priority 3: UTM Source from referrer
+        if (parsedReferrer.params.get('utm_source')) {
+            return this.sanitizeValue(parsedReferrer.params.get('utm_source'), this.STANDARD_SOURCES);
         }
 
-        return '(direct)';
+        // Priority 4: Special cases (LSA, GMB)
+        if (parsedReferrer.hostname.includes('localservices')) {
+            return 'google';
+        }
+
+        // Priority 5: Search Engines
+        const matchedEngine = this.SEARCH_ENGINE_DOMAINS.find(engine => 
+            parsedReferrer.hostname.includes(engine));
+        if (matchedEngine) {
+            return this.sanitizeValue(matchedEngine, this.STANDARD_SOURCES);
+        }
+
+        // Priority 6: Social Media
+        const matchedSocial = this.SOCIAL_DOMAINS.find(platform => 
+            parsedReferrer.hostname.includes(platform));
+        if (matchedSocial) {
+            const socialName = matchedSocial === 'youtu.be' ? 'youtube' : 
+                             matchedSocial === 'x.com' ? 'x' : matchedSocial;
+            return this.sanitizeValue(socialName, this.STANDARD_SOURCES);
+        }
+
+        // Priority 7: Clean domain name
+        const tldPattern = new RegExp(`\\.(${this.INTERNATIONAL_TLDS.join('|')})$`, 'i');
+        return parsedReferrer.hostname.replace(tldPattern, '');
     }
 
     determineMedium(params, referrer) {
+        // Priority 1: UTM Medium from URL
         if (params.get('utm_medium')) {
             return this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
         }
 
+        // Priority 2: Paid Traffic Indicators
+        if (params.get('gclid') || params.get('utm_campaign')?.toLowerCase() === 'lsa') {
+            return 'cpc';
+        }
+
+        // Priority 3: GMB Traffic
         if (params.get('utm_campaign')?.toLowerCase() === 'gmb') {
             return 'organic';
         }
 
-        if (params.get('utm_campaign')?.toLowerCase() === 'lsa') {
+        const parsedReferrer = this.parseReferrer(referrer);
+        if (!parsedReferrer) return '(none)';
+
+        // Priority 4: UTM Medium from referrer
+        if (parsedReferrer.params.get('utm_medium')) {
+            return this.sanitizeValue(parsedReferrer.params.get('utm_medium'), this.STANDARD_MEDIUMS);
+        }
+
+        // Priority 5: Special cases (LSA)
+        if (parsedReferrer.hostname.includes('localservices')) {
             return 'cpc';
         }
 
-        if (params.get('gclid')) {
-            return 'cpc';
+        // Priority 6: Search Engines (Organic)
+        if (this.SEARCH_ENGINE_DOMAINS.some(engine => parsedReferrer.hostname.includes(engine))) {
+            return 'organic';
         }
 
-        try {
-            if (referrer) {
-                const referrerUrl = new URL(referrer);
-                const referrerParams = new URLSearchParams(referrerUrl.search);
-                
-                if (referrerParams.get('utm_medium')) {
-                    return this.sanitizeValue(referrerParams.get('utm_medium'), this.STANDARD_MEDIUMS);
-                }
-
-                if (referrerParams.get('utm_campaign')?.toLowerCase() === 'gmb') {
-                    return 'organic';
-                }
-
-                const hostname = referrerUrl.hostname;
-                const searchEngines = [
-                    'google', 'bing', 'yahoo', 
-                    'duckduckgo', 'yandex'
-                ];
-                
-                if (searchEngines.some(engine => hostname.includes(engine))) {
-                    return 'organic';
-                }
-
-                const socialPlatforms = [
-                    'facebook', 'instagram', 'linkedin',
-                    'twitter', 'x.com', 'youtube',
-                    'tiktok'
-                ];
-                
-                if (socialPlatforms.some(platform => hostname.includes(platform))) {
-                    return 'social';
-                }
-
-                return 'referral';
-            }
-        } catch (e) {
-            console.error('Error parsing referrer:', e);
+        // Priority 7: Social Media
+        if (this.SOCIAL_DOMAINS.some(platform => parsedReferrer.hostname.includes(platform))) {
+            return 'social';
         }
 
-        return '(none)';
+        return 'referral';
     }
 
     sanitizeValue(value, standardMap) {
