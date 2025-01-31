@@ -164,9 +164,7 @@ class MarketingTracker {
         const params = new URLSearchParams(window.location.search);
         this.debugLog('URL Parameters:', Object.fromEntries(params));
         
-        const referrer = sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
-                        localStorage.getItem(this.BACKUP_REFERRER_KEY) || 
-                        document.referrer;
+        const referrer = document.referrer;
         const parsedReferrer = this.parseReferrer(referrer);
         
         // Get campaign value directly, only clean it for safety
@@ -175,34 +173,49 @@ class MarketingTracker {
             campaign = campaign.substring(0, this.MAX_VALUE_LENGTH).replace(/[^\w\s-_.]/g, '');
         }
         
-        // Check for LSA traffic
-        if (parsedReferrer && !campaign && parsedReferrer.hostname.includes('localservices')) {
-            campaign = 'lsa';
-            this.debugLog('Campaign set to LSA from localservices hostname');
-        }
-
-        // Check for GMB traffic
-        if (!campaign && 
-            this.sanitizeValue(params.get('utm_source'), {}) === 'google' && 
-            this.sanitizeValue(params.get('utm_medium'), {}) === 'organic') {
-            campaign = 'gmb';
-            this.debugLog('Campaign set to GMB from google/organic params');
-        }
-        
         // Get gclid and clean it
         let gclid = params.get('gclid');
         if (gclid) {
             gclid = gclid.substring(0, this.MAX_VALUE_LENGTH).replace(/[^\w-]/g, '');
             this.debugLog('Found gclid:', gclid);
         }
+
+        // Determine source and medium based on current touch
+        let source, medium;
+        
+        // Priority 1: UTM Parameters
+        if (params.get('utm_source')) {
+            source = this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
+            medium = this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
+            this.debugLog('Source/Medium from UTM:', { source, medium });
+        }
+        // Priority 2: GCLID
+        else if (gclid) {
+            source = 'google';
+            medium = 'cpc';
+            this.debugLog('Source/Medium from GCLID');
+        }
+        // Priority 3: External Referrer
+        else if (parsedReferrer && !this.isInternalReferrer(referrer)) {
+            const referrerData = this.determineReferrer(parsedReferrer);
+            source = referrerData.source;
+            medium = referrerData.medium;
+            this.debugLog('Source/Medium from referrer:', { source, medium });
+        }
+        // Priority 4: Direct
+        else {
+            source = '(direct)';
+            medium = '(none)';
+            this.debugLog('Source/Medium: Direct visit');
+        }
         
         const data = {
             timestamp: new Date().toISOString(),
-            source: this.determineSource(params, referrer),
-            medium: this.determineMedium(params, referrer),
+            source: source,
+            medium: medium,
             campaign: campaign || '',
-            term: this.sanitizeValue(params.get('utm_term'), {}),
-            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY) || window.location.pathname,
+            term: params.get('utm_term') || '',
+            landing_page: window.location.pathname,
             referrer: referrer || '(direct)',
             gclid: gclid || '',
             device: this.getDeviceType()
@@ -212,102 +225,29 @@ class MarketingTracker {
         return data;
     }
 
-    determineSource(params, referrer) {
-        this.debugLog('Determining source', { params, referrer });
-
-        // Priority 1: UTM Source from URL
-        if (params.get('utm_source')) {
-            const source = this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
-            this.debugLog('Source from UTM parameter', source);
-            return source;
+    determineReferrer(parsedReferrer) {
+        // Search engines
+        if (this.SEARCH_ENGINE_DOMAINS.some(domain => parsedReferrer.hostname.includes(domain))) {
+            return { source: this.extractDomain(parsedReferrer.hostname), medium: 'organic' };
+        }
+        
+        // Social media
+        if (this.SOCIAL_DOMAINS.some(domain => parsedReferrer.hostname.includes(domain))) {
+            return { source: this.extractDomain(parsedReferrer.hostname), medium: 'social' };
         }
 
-        // Priority 2: Google Ads, LSA, or GMB
-        if (params.get('gclid') || 
-            params.get('utm_campaign')?.toLowerCase() === 'lsa' || 
-            params.get('utm_campaign')?.toLowerCase() === 'gmb') {
-            this.debugLog('Source from Google Ads/LSA/GMB');
-            return 'google';
-        }
-
-        const parsedReferrer = this.parseReferrer(referrer);
-        if (!parsedReferrer) return '(direct)';
-
-        // Priority 3: UTM Source from referrer
-        if (parsedReferrer.params.get('utm_source')) {
-            return this.sanitizeValue(parsedReferrer.params.get('utm_source'), this.STANDARD_SOURCES);
-        }
-
-        // Priority 4: Special cases (LSA, GMB)
-        if (parsedReferrer.hostname.includes('localservices')) {
-            return 'google';
-        }
-
-        // Priority 5: Search Engines
-        const matchedEngine = this.SEARCH_ENGINE_DOMAINS.find(engine => 
-            parsedReferrer.hostname.includes(engine));
-        if (matchedEngine) {
-            return this.sanitizeValue(matchedEngine, this.STANDARD_SOURCES);
-        }
-
-        // Priority 6: Social Media
-        const matchedSocial = this.SOCIAL_DOMAINS.find(platform => 
-            parsedReferrer.hostname.includes(platform));
-        if (matchedSocial) {
-            const socialName = matchedSocial === 'youtu.be' ? 'youtube' : 
-                             matchedSocial === 'x.com' ? 'x' : matchedSocial;
-            return this.sanitizeValue(socialName, this.STANDARD_SOURCES);
-        }
-
-        // Priority 7: Clean domain name
-        const tldPattern = new RegExp(`\\.(${this.INTERNATIONAL_TLDS.join('|')})$`, 'i');
-        return parsedReferrer.hostname.replace(tldPattern, '');
+        // Other referrers
+        return { 
+            source: this.extractDomain(parsedReferrer.hostname), 
+            medium: 'referral' 
+        };
     }
 
-    determineMedium(params, referrer) {
-        this.debugLog('Determining medium', { params, referrer });
-
-        // Priority 1: UTM Medium from URL
-        if (params.get('utm_medium')) {
-            const medium = this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
-            this.debugLog('Medium from UTM parameter', medium);
-            return medium;
-        }
-
-        // Priority 2: Paid Traffic Indicators
-        if (params.get('gclid') || params.get('utm_campaign')?.toLowerCase() === 'lsa') {
-            return 'cpc';
-        }
-
-        // Priority 3: GMB Traffic
-        if (params.get('utm_campaign')?.toLowerCase() === 'gmb') {
-            return 'organic';
-        }
-
-        const parsedReferrer = this.parseReferrer(referrer);
-        if (!parsedReferrer) return '(none)';
-
-        // Priority 4: UTM Medium from referrer
-        if (parsedReferrer.params.get('utm_medium')) {
-            return this.sanitizeValue(parsedReferrer.params.get('utm_medium'), this.STANDARD_MEDIUMS);
-        }
-
-        // Priority 5: Special cases (LSA)
-        if (parsedReferrer.hostname.includes('localservices')) {
-            return 'cpc';
-        }
-
-        // Priority 6: Search Engines (Organic)
-        if (this.SEARCH_ENGINE_DOMAINS.some(engine => parsedReferrer.hostname.includes(engine))) {
-            return 'organic';
-        }
-
-        // Priority 7: Social Media
-        if (this.SOCIAL_DOMAINS.some(platform => parsedReferrer.hostname.includes(platform))) {
-            return 'social';
-        }
-
-        return 'referral';
+    extractDomain(hostname) {
+        // Remove common prefixes and get base domain
+        return hostname
+            .replace(/^www\./, '')
+            .split('.')[0];
     }
 
     sanitizeValue(value, standardMap) {
