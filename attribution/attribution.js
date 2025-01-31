@@ -6,6 +6,7 @@ class MarketingTracker {
     constructor() {
         this.STORAGE_KEY = 'marketing_data';
         this.SESSION_LANDING_KEY = 'session_landing_page';
+        this.SESSION_REFERRER_KEY = 'session_referrer';
         this.initializeTracking();
     }
 
@@ -37,22 +38,41 @@ class MarketingTracker {
         const currentData = this.createTrackingData();
         const storedData = this.getStoredData();
         
+        // Store landing page if first page in session
         if (!sessionStorage.getItem(this.SESSION_LANDING_KEY)) {
             sessionStorage.setItem(this.SESSION_LANDING_KEY, window.location.pathname);
+        }
+
+        // Store original referrer if first page in session or external referrer
+        const currentReferrer = document.referrer;
+        if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
+            (currentReferrer && !this.isInternalReferrer(currentReferrer))) {
+            sessionStorage.setItem(this.SESSION_REFERRER_KEY, currentReferrer);
         }
         
         storedData.lastInteraction = {
             ...currentData,
-            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY)
+            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+            referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
         };
         storedData.visitCount = (storedData.visitCount || 0) + 1;
         
         this.storeData(storedData);
     }
 
+    isInternalReferrer(referrer) {
+        try {
+            const referrerUrl = new URL(referrer);
+            const currentUrl = new URL(window.location.href);
+            return referrerUrl.hostname === currentUrl.hostname;
+        } catch (e) {
+            return false;
+        }
+    }
+
     createTrackingData() {
         const params = new URLSearchParams(window.location.search);
-        const referrer = document.referrer;
+        const referrer = sessionStorage.getItem(this.SESSION_REFERRER_KEY) || document.referrer;
         
         return {
             timestamp: new Date().toISOString(),
