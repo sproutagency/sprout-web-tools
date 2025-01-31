@@ -120,6 +120,8 @@ class MarketingTracker {
 
     createTrackingData() {
         const params = new URLSearchParams(window.location.search);
+        this.debugLog('URL Parameters:', Object.fromEntries(params));
+        
         const referrer = sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
                         localStorage.getItem(this.BACKUP_REFERRER_KEY) || 
                         document.referrer;
@@ -127,8 +129,11 @@ class MarketingTracker {
         
         // Get campaign value directly, only clean it for safety
         let campaign = params.get('utm_campaign');
+        this.debugLog('Initial campaign value:', campaign);
+        
         if (campaign) {
             campaign = campaign.substring(0, this.MAX_VALUE_LENGTH).replace(/[^\w\s-_.]/g, '');
+            this.debugLog('Cleaned campaign value:', campaign);
         }
         
         // Check for LSA traffic
@@ -157,7 +162,7 @@ class MarketingTracker {
             device: this.getDeviceType()
         };
 
-        this.debugLog('Created tracking data', data);
+        this.debugLog('Created tracking data:', data);
         return data;
     }
 
@@ -295,12 +300,15 @@ class MarketingTracker {
     }
 
     storeData(data) {
+        this.debugLog('Storing data:', data);
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
     }
 
     getFormAttributes() {
         const data = this.getStoredData();
-        return {
+        this.debugLog('Getting stored data for form attributes:', data);
+
+        const attributes = {
             source: data.lastInteraction?.source || '(direct)',
             medium: data.lastInteraction?.medium || '(none)',
             campaign: data.lastInteraction?.campaign || '',
@@ -312,6 +320,9 @@ class MarketingTracker {
             device: data.lastInteraction?.device || this.getDeviceType(),
             visit_count: data.visitCount || 1
         };
+
+        this.debugLog('Returning form attributes:', attributes);
+        return attributes;
     }
 }
 
