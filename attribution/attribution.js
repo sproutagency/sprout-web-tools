@@ -8,7 +8,7 @@ class MarketingTracker {
         this.SESSION_LANDING_KEY = 'session_landing_page';
         this.SESSION_REFERRER_KEY = 'session_referrer';
         this.BACKUP_REFERRER_KEY = 'original_referrer';
-        this.DEBUG = false; // Set to true to enable debug logging
+        this.DEBUG = true; // Set to true to enable debug logging
         this.MAX_VALUE_LENGTH = 500; // Maximum length for stored values
         this.initializeTracking();
     }
