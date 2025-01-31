@@ -314,8 +314,10 @@ class MarketingTracker {
 
     getStoredData() {
         try {
-            return JSON.parse(localStorage.getItem(this.STORAGE_KEY)) || {};
-        } catch (e) {
+            const storedData = localStorage.getItem(this.STORAGE_KEY);
+            return storedData ? JSON.parse(storedData) : {};
+        } catch (error) {
+            this.debugLog('Error reading stored data:', error);
             return {};
         }
     }
@@ -329,6 +331,14 @@ class MarketingTracker {
         const data = this.getStoredData();
         this.debugLog('Getting stored data for form attributes:', data);
 
+        // Ensure we have data
+        if (!data || !data.lastInteraction) {
+            this.debugLog('No stored data found, creating new tracking data');
+            const currentData = this.createTrackingData();
+            data.lastInteraction = currentData;
+            this.storeData(data);
+        }
+
         const attributes = {
             source: data.lastInteraction?.source || '(direct)',
             medium: data.lastInteraction?.medium || '(none)',
@@ -336,10 +346,11 @@ class MarketingTracker {
             term: data.lastInteraction?.term || '',
             landing_page: data.lastInteraction?.landing_page || window.location.pathname,
             conversion_page: window.location.pathname,
-            referrer: data.lastInteraction?.referrer || document.referrer || '(direct)',
+            referrer: data.lastInteraction?.referrer || '(direct)',
             gclid: data.lastInteraction?.gclid || '',
             device: data.lastInteraction?.device || this.getDeviceType(),
-            visit_count: data.visitCount || 1
+            visit_count: data.visitCount || 1,
+            timestamp: new Date().toISOString()
         };
 
         this.debugLog('Returning form attributes:', attributes);
@@ -347,7 +358,16 @@ class MarketingTracker {
     }
 }
 
-window.marketingTracker = new MarketingTracker();
+// Initialize and expose the tracker
+(function() {
+    // Only initialize if not already done
+    if (!window.marketingTracker) {
+        window.marketingTracker = new MarketingTracker();
+        
+        // Dispatch event when ready
+        window.dispatchEvent(new Event('marketingTrackerReady'));
+    }
+})();
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = MarketingTracker;
