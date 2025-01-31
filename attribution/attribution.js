@@ -61,12 +61,6 @@ class MarketingTracker {
     initializeTracking() {
         const storedData = this.getStoredData();
         const params = new URLSearchParams(window.location.search);
-        
-        // Store landing page if first page in session
-        if (!sessionStorage.getItem(this.SESSION_LANDING_KEY)) {
-            sessionStorage.setItem(this.SESSION_LANDING_KEY, window.location.pathname);
-        }
-
         const currentReferrer = document.referrer;
         const isInternalNavigation = currentReferrer && this.isInternalReferrer(currentReferrer);
         
@@ -82,44 +76,18 @@ class MarketingTracker {
                     conversion_page: window.location.pathname
                 };
             }
-            // If no existing data, will fall through to direct attribution
         }
-        // Otherwise, it's a new touch - update attribution based on priority
+        // Otherwise, it's a new touch - update all attribution data
         else {
-            const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
-            const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
-
-            if (hasUtmParams) {
-                this.debugLog('New touch: UTM parameters');
-                storedData.lastInteraction = {
-                    ...currentData,
-                    landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                    referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
-                };
-            } else if (hasExternalReferrer) {
-                this.debugLog('New touch: External referrer', { referrer: currentReferrer });
-                storedData.lastInteraction = {
-                    ...currentData,
-                    landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                    referrer: currentReferrer
-                };
-            } else {
-                this.debugLog('New touch: Direct visit');
-                storedData.lastInteraction = {
-                    ...currentData,
-                    landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                    referrer: '(direct)',
-                    source: '(direct)',
-                    medium: '(none)',
-                    campaign: '',
-                    term: '',
-                    gclid: ''
-                };
-            }
-
-            // Store the referrer for this touch
-            sessionStorage.setItem(this.SESSION_REFERRER_KEY, currentReferrer || '(direct)');
-            localStorage.setItem(this.BACKUP_REFERRER_KEY, currentReferrer || '(direct)');
+            this.debugLog('New touch - updating all attribution data');
+            // Remove any session storage to ensure fresh landing page
+            sessionStorage.removeItem(this.SESSION_LANDING_KEY);
+            // Update all data for new touch
+            storedData.lastInteraction = {
+                ...currentData,
+                landing_page: window.location.pathname,  // Ensure landing page is current page for new touch
+                conversion_page: window.location.pathname
+            };
         }
 
         // Always increment visit count
