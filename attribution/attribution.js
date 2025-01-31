@@ -24,13 +24,15 @@ class MarketingTracker {
 
     STANDARD_SOURCES = {
         'google': 'google',
+        'bing': 'bing',
+        'yahoo': 'yahoo',
+        'duckduckgo': 'duckduckgo',
         'facebook': 'facebook',
         'instagram': 'instagram',
         'linkedin': 'linkedin',
         'x': 'x',
         'youtube': 'youtube',
         'tiktok': 'tiktok',
-        'bing': 'bing',
         'direct': '(direct)'
     };
 
@@ -38,12 +40,10 @@ class MarketingTracker {
         const currentData = this.createTrackingData();
         const storedData = this.getStoredData();
         
-        // Store landing page if first page in session
         if (!sessionStorage.getItem(this.SESSION_LANDING_KEY)) {
             sessionStorage.setItem(this.SESSION_LANDING_KEY, window.location.pathname);
         }
 
-        // Store original referrer if first page in session or external referrer
         const currentReferrer = document.referrer;
         if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
             (currentReferrer && !this.isInternalReferrer(currentReferrer))) {
@@ -90,30 +90,25 @@ class MarketingTracker {
     }
 
     determineSource(params, referrer) {
-        // Check URL parameters first
         if (params.get('utm_source')) {
             return this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
         }
 
-        // Check for Google properties
         if (params.get('gclid') || 
             params.get('utm_campaign')?.toLowerCase() === 'lsa' ||
             params.get('utm_campaign')?.toLowerCase() === 'gmb') {
             return 'google';
         }
 
-        // Parse UTM parameters from referrer URL
         try {
             if (referrer) {
                 const referrerUrl = new URL(referrer);
                 const referrerParams = new URLSearchParams(referrerUrl.search);
                 
-                // Check UTM parameters in referrer URL
                 if (referrerParams.get('utm_source')) {
                     return this.sanitizeValue(referrerParams.get('utm_source'), this.STANDARD_SOURCES);
                 }
 
-                // Check for GMB in referrer URL
                 if (referrerParams.get('utm_campaign')?.toLowerCase() === 'gmb') {
                     return 'google';
                 }
@@ -122,8 +117,19 @@ class MarketingTracker {
                     return 'google';
                 }
 
-                // Social media detection
-                const domain = referrerUrl.hostname.replace('www.', '');
+                const hostname = referrerUrl.hostname.replace('www.', '');
+                const searchEngines = {
+                    'google.com': 'google',
+                    'bing.com': 'bing',
+                    'yahoo.com': 'yahoo',
+                    'duckduckgo.com': 'duckduckgo',
+                    'yandex.com': 'yandex'
+                };
+                
+                if (searchEngines[hostname]) {
+                    return searchEngines[hostname];
+                }
+
                 const socialMap = {
                     'facebook.com': 'facebook',
                     'instagram.com': 'instagram',
@@ -135,7 +141,11 @@ class MarketingTracker {
                     'tiktok.com': 'tiktok'
                 };
 
-                return socialMap[domain] || domain;
+                if (socialMap[hostname]) {
+                    return socialMap[hostname];
+                }
+
+                return hostname.replace(/\.(com|org|net|edu|gov|mil|int|io|co|me|uk|de|fr)$/i, '');
             }
         } catch (e) {
             console.error('Error parsing referrer:', e);
@@ -145,47 +155,55 @@ class MarketingTracker {
     }
 
     determineMedium(params, referrer) {
-        // Check URL parameters first
         if (params.get('utm_medium')) {
             return this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
         }
 
-        // Handle GMB traffic
         if (params.get('utm_campaign')?.toLowerCase() === 'gmb') {
             return 'organic';
         }
 
-        // Handle LSA traffic
         if (params.get('utm_campaign')?.toLowerCase() === 'lsa') {
             return 'cpc';
         }
 
-        // Check gclid for paid search
         if (params.get('gclid')) {
             return 'cpc';
         }
 
-        // Parse UTM parameters from referrer URL
         try {
             if (referrer) {
                 const referrerUrl = new URL(referrer);
                 const referrerParams = new URLSearchParams(referrerUrl.search);
                 
-                // Check UTM parameters in referrer URL
                 if (referrerParams.get('utm_medium')) {
                     return this.sanitizeValue(referrerParams.get('utm_medium'), this.STANDARD_MEDIUMS);
                 }
 
-                // Check for GMB in referrer URL
                 if (referrerParams.get('utm_campaign')?.toLowerCase() === 'gmb') {
                     return 'organic';
                 }
 
-                // Default channel detection
-                if (referrerUrl.hostname.includes('google')) return 'organic';
-                if (referrerUrl.hostname.includes('facebook')) return 'social';
-                if (referrerUrl.hostname.includes('youtube')) return 'social';
-                if (referrerUrl.hostname.includes('x.com')) return 'social';
+                const hostname = referrerUrl.hostname;
+                const searchEngines = [
+                    'google', 'bing', 'yahoo', 
+                    'duckduckgo', 'yandex'
+                ];
+                
+                if (searchEngines.some(engine => hostname.includes(engine))) {
+                    return 'organic';
+                }
+
+                const socialPlatforms = [
+                    'facebook', 'instagram', 'linkedin',
+                    'twitter', 'x.com', 'youtube',
+                    'tiktok'
+                ];
+                
+                if (socialPlatforms.some(platform => hostname.includes(platform))) {
+                    return 'social';
+                }
+
                 return 'referral';
             }
         } catch (e) {
