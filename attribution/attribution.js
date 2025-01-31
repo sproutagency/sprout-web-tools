@@ -66,17 +66,15 @@ class MarketingTracker {
         // Always create new tracking data with current page
         const currentData = {
             ...this.createTrackingData(),
-            landing_page: window.location.pathname,    // Explicitly set current page
-            conversion_page: window.location.pathname  // Start with current page
+            landing_page: window.location.pathname    // Explicitly set current page
         };
         
-        // If it's internal navigation, just update the conversion page
+        // If it's internal navigation, preserve existing attribution
         if (isInternalNavigation) {
             this.debugLog('Internal navigation - preserving attribution');
             if (storedData.lastInteraction) {
                 storedData.lastInteraction = {
-                    ...storedData.lastInteraction,
-                    conversion_page: window.location.pathname
+                    ...storedData.lastInteraction
                 };
             }
         }
@@ -301,7 +299,6 @@ class MarketingTracker {
             campaign: data.lastInteraction?.campaign || '',
             term: data.lastInteraction?.term || '',
             landing_page: data.lastInteraction?.landing_page || window.location.pathname,
-            conversion_page: window.location.pathname,
             referrer: data.lastInteraction?.referrer || '(direct)',
             gclid: data.lastInteraction?.gclid || '',
             device: data.lastInteraction?.device || this.getDeviceType(),
