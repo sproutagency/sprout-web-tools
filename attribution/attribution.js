@@ -226,28 +226,59 @@ class MarketingTracker {
     }
 
     determineReferrer(parsedReferrer) {
+        const hostname = parsedReferrer.hostname.toLowerCase();
+
         // Search engines
-        if (this.SEARCH_ENGINE_DOMAINS.some(domain => parsedReferrer.hostname.includes(domain))) {
-            return { source: this.extractDomain(parsedReferrer.hostname), medium: 'organic' };
+        if (this.SEARCH_ENGINE_DOMAINS.some(domain => hostname.includes(domain))) {
+            return { source: this.extractDomain(hostname), medium: 'organic' };
         }
         
-        // Social media
-        if (this.SOCIAL_DOMAINS.some(domain => parsedReferrer.hostname.includes(domain))) {
-            return { source: this.extractDomain(parsedReferrer.hostname), medium: 'social' };
+        // Social media with special cases
+        if (this.SOCIAL_DOMAINS.some(domain => hostname.includes(domain))) {
+            // Special case for Facebook properties
+            if (hostname.includes('facebook') || hostname.includes('messenger')) {
+                return { source: 'facebook', medium: 'social' };
+            }
+            // Special case for Instagram
+            if (hostname.includes('instagram')) {
+                return { source: 'instagram', medium: 'social' };
+            }
+            // Special case for X/Twitter
+            if (hostname.includes('twitter') || hostname.includes('x.com')) {
+                return { source: 'twitter', medium: 'social' };
+            }
+            // Special case for YouTube
+            if (hostname.includes('youtube') || hostname.includes('youtu.be')) {
+                return { source: 'youtube', medium: 'social' };
+            }
+            // Default social case
+            return { source: this.extractDomain(hostname), medium: 'social' };
         }
 
         // Other referrers
         return { 
-            source: this.extractDomain(parsedReferrer.hostname), 
+            source: this.extractDomain(hostname), 
             medium: 'referral' 
         };
     }
 
     extractDomain(hostname) {
-        // Remove common prefixes and get base domain
-        return hostname
-            .replace(/^www\./, '')
-            .split('.')[0];
+        // Handle special cases first
+        if (hostname.includes('facebook') || hostname.includes('messenger')) return 'facebook';
+        if (hostname.includes('instagram')) return 'instagram';
+        if (hostname.includes('twitter') || hostname.includes('x.com')) return 'twitter';
+        if (hostname.includes('youtube') || hostname.includes('youtu.be')) return 'youtube';
+        if (hostname.includes('linkedin')) return 'linkedin';
+        
+        // Remove common prefixes
+        hostname = hostname
+            .replace(/^[a-z]\./i, '')     // Remove single letter subdomains (like l.facebook.com)
+            .replace(/^www\./i, '')       // Remove www.
+            .replace(/^m\./i, '')         // Remove mobile prefix
+            .replace(/^l\./i, '')         // Remove link shortener prefix
+            .split('.')[0];               // Get the main domain part
+            
+        return hostname;
     }
 
     sanitizeValue(value, standardMap) {
