@@ -179,7 +179,7 @@ class MarketingTracker {
             gclid = gclid.substring(0, this.MAX_VALUE_LENGTH).replace(/[^\w-]/g, '');
             this.debugLog('Found gclid:', gclid);
         }
-
+        
         // Determine source and medium based on current touch
         let source, medium;
         
