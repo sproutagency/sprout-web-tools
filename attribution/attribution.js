@@ -76,29 +76,35 @@ class MarketingTracker {
             sessionStorage.setItem(this.SESSION_REFERRER_KEY, localStorage.getItem(this.BACKUP_REFERRER_KEY));
         }
 
-        // Only update attribution if:
-        // 1. No previous data exists, or
-        // 2. We have UTM parameters or gclid, or
-        // 3. This is a new session with external referrer
+        // Always create new tracking data for last touch attribution
+        const currentData = this.createTrackingData();
+        
+        // Only update if we have meaningful attribution data
         const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
-        const isNewSession = !sessionStorage.getItem(this.SESSION_LANDING_KEY);
         const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
 
-        if (!storedData.lastInteraction || hasUtmParams || (isNewSession && hasExternalReferrer)) {
+        if (hasUtmParams || hasExternalReferrer) {
             this.debugLog('Updating attribution data due to:', {
                 hasUtmParams,
-                isNewSession,
-                hasExternalReferrer
+                hasExternalReferrer,
+                currentReferrer
             });
 
-            const currentData = this.createTrackingData();
+            storedData.lastInteraction = {
+                ...currentData,
+                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
+            };
+        } else if (!storedData.lastInteraction) {
+            // Initialize with current data if no previous data exists
+            this.debugLog('Initializing first attribution data');
             storedData.lastInteraction = {
                 ...currentData,
                 landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
                 referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
             };
         } else {
-            this.debugLog('Preserving existing attribution data');
+            this.debugLog('No new attribution data to update');
         }
 
         // Always increment visit count
