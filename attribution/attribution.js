@@ -183,26 +183,26 @@ class MarketingTracker {
         // Determine source and medium based on current touch
         let source, medium;
         
-        // Priority 1: UTM Parameters (if either utm_source OR utm_medium is present)
+        // Priority 1: UTM Parameters (highest priority - marketer's explicit intent)
         if (params.get('utm_source') || params.get('utm_medium')) {
             source = this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
             medium = this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
-            this.debugLog('Source/Medium from UTM:', { source, medium });
+            this.debugLog('Source/Medium from UTM (highest priority):', { source, medium });
         }
-        // Priority 2: GCLID (only if no UTM parameters)
+        // Priority 2: GCLID (specific case for Google Ads)
         else if (gclid) {
             source = 'google';
             medium = 'cpc';
             this.debugLog('Source/Medium from GCLID');
         }
-        // Priority 3: External Referrer
+        // Priority 3: Referrer (fallback for untagged traffic)
         else if (parsedReferrer && !this.isInternalReferrer(referrer)) {
             const referrerData = this.determineReferrer(parsedReferrer);
             source = referrerData.source;
             medium = referrerData.medium;
-            this.debugLog('Source/Medium from referrer:', { source, medium });
+            this.debugLog('Source/Medium from referrer (fallback):', { source, medium });
         }
-        // Priority 4: Direct
+        // Priority 4: Direct (lowest priority)
         else {
             source = '(direct)';
             medium = '(none)';
@@ -211,12 +211,12 @@ class MarketingTracker {
         
         const data = {
             timestamp: new Date().toISOString(),
-            source: source || '(direct)',  // Ensure we never have null source
-            medium: medium || '(none)',    // Ensure we never have null medium
+            source: source || '(direct)',
+            medium: medium || '(none)',
             campaign: campaign || '',
             term: params.get('utm_term') || '',
-            landing_page: window.location.pathname,  // Always use current page as landing for new touch
-            referrer: referrer || '(direct)',       // Always use current referrer for new touch
+            landing_page: window.location.pathname,
+            referrer: referrer || '(direct)',  // Store actual HTTP referrer for context
             gclid: gclid || '',
             device: this.getDeviceType()
         };
