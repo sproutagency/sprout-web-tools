@@ -7,6 +7,9 @@ class MarketingTracker {
         this.STORAGE_KEY = 'marketing_data';
         this.SESSION_LANDING_KEY = 'session_landing_page';
         this.SESSION_REFERRER_KEY = 'session_referrer';
+        this.BACKUP_REFERRER_KEY = 'original_referrer';
+        this.DEBUG = false; // Set to true to enable debug logging
+        this.MAX_VALUE_LENGTH = 500; // Maximum length for stored values
         this.initializeTracking();
     }
 
@@ -67,6 +70,10 @@ class MarketingTracker {
         if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
             (currentReferrer && !this.isInternalReferrer(currentReferrer))) {
             sessionStorage.setItem(this.SESSION_REFERRER_KEY, currentReferrer);
+            localStorage.setItem(this.BACKUP_REFERRER_KEY, currentReferrer); // Backup referrer
+        } else if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) && localStorage.getItem(this.BACKUP_REFERRER_KEY)) {
+            // Restore from backup if session storage is cleared
+            sessionStorage.setItem(this.SESSION_REFERRER_KEY, localStorage.getItem(this.BACKUP_REFERRER_KEY));
         }
         
         storedData.lastInteraction = {
@@ -77,6 +84,13 @@ class MarketingTracker {
         storedData.visitCount = (storedData.visitCount || 0) + 1;
         
         this.storeData(storedData);
+        this.debugLog('Tracking initialized', storedData);
+    }
+
+    debugLog(message, data = null) {
+        if (this.DEBUG) {
+            console.log(`[Marketing Tracker] ${message}`, data || '');
+        }
     }
 
     isInternalReferrer(referrer) {
@@ -106,45 +120,58 @@ class MarketingTracker {
 
     createTrackingData() {
         const params = new URLSearchParams(window.location.search);
-        const referrer = sessionStorage.getItem(this.SESSION_REFERRER_KEY) || document.referrer;
+        const referrer = sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
+                        localStorage.getItem(this.BACKUP_REFERRER_KEY) || 
+                        document.referrer;
         const parsedReferrer = this.parseReferrer(referrer);
         
-        let campaign = params.get('utm_campaign') || '';
+        let campaign = this.sanitizeValue(params.get('utm_campaign'), {}); // Sanitize campaign value
         
         // Check for LSA traffic
         if (parsedReferrer && !campaign && parsedReferrer.hostname.includes('localservices')) {
             campaign = 'lsa';
+            this.debugLog('Campaign set to LSA from localservices hostname');
         }
 
         // Check for GMB traffic
-        if (!campaign && params.get('utm_source')?.toLowerCase() === 'google' && 
-            params.get('utm_medium')?.toLowerCase() === 'organic') {
+        if (!campaign && 
+            this.sanitizeValue(params.get('utm_source'), {}) === 'google' && 
+            this.sanitizeValue(params.get('utm_medium'), {}) === 'organic') {
             campaign = 'gmb';
+            this.debugLog('Campaign set to GMB from google/organic params');
         }
         
-        return {
+        const data = {
             timestamp: new Date().toISOString(),
             source: this.determineSource(params, referrer),
             medium: this.determineMedium(params, referrer),
             campaign: campaign,
-            term: params.get('utm_term'),
+            term: this.sanitizeValue(params.get('utm_term'), {}),
             landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY) || window.location.pathname,
             referrer: referrer || '(direct)',
             gclid: params.get('gclid'),
             device: this.getDeviceType()
         };
+
+        this.debugLog('Created tracking data', data);
+        return data;
     }
 
     determineSource(params, referrer) {
+        this.debugLog('Determining source', { params, referrer });
+
         // Priority 1: UTM Source from URL
         if (params.get('utm_source')) {
-            return this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
+            const source = this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
+            this.debugLog('Source from UTM parameter', source);
+            return source;
         }
 
         // Priority 2: Google Ads, LSA, or GMB
         if (params.get('gclid') || 
             params.get('utm_campaign')?.toLowerCase() === 'lsa' || 
             params.get('utm_campaign')?.toLowerCase() === 'gmb') {
+            this.debugLog('Source from Google Ads/LSA/GMB');
             return 'google';
         }
 
@@ -183,9 +210,13 @@ class MarketingTracker {
     }
 
     determineMedium(params, referrer) {
+        this.debugLog('Determining medium', { params, referrer });
+
         // Priority 1: UTM Medium from URL
         if (params.get('utm_medium')) {
-            return this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
+            const medium = this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
+            this.debugLog('Medium from UTM parameter', medium);
+            return medium;
         }
 
         // Priority 2: Paid Traffic Indicators
@@ -226,7 +257,17 @@ class MarketingTracker {
 
     sanitizeValue(value, standardMap) {
         if (!value) return null;
-        const cleaned = value.toLowerCase().trim();
+        
+        // Trim and limit length
+        let cleaned = value.toLowerCase().trim();
+        if (cleaned.length > this.MAX_VALUE_LENGTH) {
+            this.debugLog(`Value exceeded maximum length: ${value}`);
+            cleaned = cleaned.substring(0, this.MAX_VALUE_LENGTH);
+        }
+
+        // Remove potentially harmful characters
+        cleaned = cleaned.replace(/[^\w\s-_.]/g, '');
+        
         return standardMap[cleaned] || cleaned;
     }
 
