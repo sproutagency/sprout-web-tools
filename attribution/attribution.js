@@ -70,23 +70,40 @@ class MarketingTracker {
     }
 
     determineSource(params, referrer) {
+        // Check URL parameters first
         if (params.get('utm_source')) {
             return this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
         }
 
-        if (params.get('gclid') || params.get('utm_campaign')?.toLowerCase() === 'lsa') {
+        // Check for Google properties
+        if (params.get('gclid') || 
+            params.get('utm_campaign')?.toLowerCase() === 'lsa' ||
+            params.get('utm_campaign')?.toLowerCase() === 'gmb') {
             return 'google';
         }
 
-        if (referrer && referrer.includes('localservices')) {
-            return 'google';
-        }
-
+        // Parse UTM parameters from referrer URL
         try {
             if (referrer) {
                 const referrerUrl = new URL(referrer);
-                const domain = referrerUrl.hostname.replace('www.', '');
+                const referrerParams = new URLSearchParams(referrerUrl.search);
+                
+                // Check UTM parameters in referrer URL
+                if (referrerParams.get('utm_source')) {
+                    return this.sanitizeValue(referrerParams.get('utm_source'), this.STANDARD_SOURCES);
+                }
 
+                // Check for GMB in referrer URL
+                if (referrerParams.get('utm_campaign')?.toLowerCase() === 'gmb') {
+                    return 'google';
+                }
+
+                if (referrerUrl.hostname.includes('localservices')) {
+                    return 'google';
+                }
+
+                // Social media detection
+                const domain = referrerUrl.hostname.replace('www.', '');
                 const socialMap = {
                     'facebook.com': 'facebook',
                     'instagram.com': 'instagram',
@@ -108,27 +125,51 @@ class MarketingTracker {
     }
 
     determineMedium(params, referrer) {
-        if (params.get('utm_campaign')?.toLowerCase() === 'lsa') {
-            return 'cpc';
-        }
-
+        // Check URL parameters first
         if (params.get('utm_medium')) {
             return this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
         }
 
-        if (params.get('gclid')) return 'cpc';
+        // Handle GMB traffic
+        if (params.get('utm_campaign')?.toLowerCase() === 'gmb') {
+            return 'organic';
+        }
 
-        if (referrer) {
-            try {
+        // Handle LSA traffic
+        if (params.get('utm_campaign')?.toLowerCase() === 'lsa') {
+            return 'cpc';
+        }
+
+        // Check gclid for paid search
+        if (params.get('gclid')) {
+            return 'cpc';
+        }
+
+        // Parse UTM parameters from referrer URL
+        try {
+            if (referrer) {
                 const referrerUrl = new URL(referrer);
+                const referrerParams = new URLSearchParams(referrerUrl.search);
+                
+                // Check UTM parameters in referrer URL
+                if (referrerParams.get('utm_medium')) {
+                    return this.sanitizeValue(referrerParams.get('utm_medium'), this.STANDARD_MEDIUMS);
+                }
+
+                // Check for GMB in referrer URL
+                if (referrerParams.get('utm_campaign')?.toLowerCase() === 'gmb') {
+                    return 'organic';
+                }
+
+                // Default channel detection
                 if (referrerUrl.hostname.includes('google')) return 'organic';
                 if (referrerUrl.hostname.includes('facebook')) return 'social';
                 if (referrerUrl.hostname.includes('youtube')) return 'social';
                 if (referrerUrl.hostname.includes('x.com')) return 'social';
                 return 'referral';
-            } catch (e) {
-                console.error('Error parsing referrer:', e);
             }
+        } catch (e) {
+            console.error('Error parsing referrer:', e);
         }
 
         return '(none)';
