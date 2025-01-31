@@ -125,7 +125,11 @@ class MarketingTracker {
                         document.referrer;
         const parsedReferrer = this.parseReferrer(referrer);
         
-        let campaign = this.sanitizeValue(params.get('utm_campaign'), {}); // Sanitize campaign value
+        // Get campaign value directly, only clean it for safety
+        let campaign = params.get('utm_campaign');
+        if (campaign) {
+            campaign = campaign.substring(0, this.MAX_VALUE_LENGTH).replace(/[^\w\s-_.]/g, '');
+        }
         
         // Check for LSA traffic
         if (parsedReferrer && !campaign && parsedReferrer.hostname.includes('localservices')) {
@@ -145,7 +149,7 @@ class MarketingTracker {
             timestamp: new Date().toISOString(),
             source: this.determineSource(params, referrer),
             medium: this.determineMedium(params, referrer),
-            campaign: campaign,
+            campaign: campaign || '',
             term: this.sanitizeValue(params.get('utm_term'), {}),
             landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY) || window.location.pathname,
             referrer: referrer || '(direct)',
