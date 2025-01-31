@@ -68,71 +68,47 @@ class MarketingTracker {
         }
 
         const currentReferrer = document.referrer;
-        if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) || 
-            (currentReferrer && !this.isInternalReferrer(currentReferrer))) {
-            sessionStorage.setItem(this.SESSION_REFERRER_KEY, currentReferrer);
-            localStorage.setItem(this.BACKUP_REFERRER_KEY, currentReferrer);
-        } else if (!sessionStorage.getItem(this.SESSION_REFERRER_KEY) && localStorage.getItem(this.BACKUP_REFERRER_KEY)) {
-            sessionStorage.setItem(this.SESSION_REFERRER_KEY, localStorage.getItem(this.BACKUP_REFERRER_KEY));
-        }
-
+        const isInternalNavigation = currentReferrer && this.isInternalReferrer(currentReferrer);
+        
         // Always create new tracking data
         const currentData = this.createTrackingData();
         
-        // Check for attribution sources
-        const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
-        const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
-        const isInternalNavigation = currentReferrer && this.isInternalReferrer(currentReferrer);
-        
-        // Only treat as direct if:
-        // 1. No UTM params
-        // 2. No referrer
-        // 3. No existing attribution data
-        // 4. Not in an existing session
-        const isNewDirect = !hasUtmParams && 
-                          !currentReferrer && 
-                          !storedData.lastInteraction && 
-                          !sessionStorage.getItem(this.SESSION_LANDING_KEY);
-
-        // Update attribution data based on the type of visit
-        if (hasUtmParams) {
-            this.debugLog('Updating attribution: UTM parameters detected');
-            storedData.lastInteraction = {
-                ...currentData,
-                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
-            };
-        } else if (hasExternalReferrer) {
-            this.debugLog('Updating attribution: External referrer detected', { referrer: currentReferrer });
-            storedData.lastInteraction = {
-                ...currentData,
-                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
-            };
-        } else if (isNewDirect) {
-            this.debugLog('Updating attribution: New direct visit');
-            storedData.lastInteraction = {
-                ...currentData,
-                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                referrer: '(direct)',
-                source: '(direct)',
-                medium: '(none)',
-                campaign: '',
-                term: '',
-                gclid: ''
-            };
-        } else {
-            // Either internal navigation or page refresh - preserve existing attribution
-            this.debugLog('Preserving attribution: Internal navigation or refresh');
+        // If it's internal navigation, just update the conversion page
+        if (isInternalNavigation) {
+            this.debugLog('Internal navigation - preserving attribution');
             if (storedData.lastInteraction) {
                 storedData.lastInteraction = {
                     ...storedData.lastInteraction,
                     conversion_page: window.location.pathname
                 };
-            } else {
-                // If no existing data (shouldn't happen), initialize as direct
+            }
+            // If no existing data, will fall through to direct attribution
+        }
+        // Otherwise, it's a new touch - update attribution based on priority
+        else {
+            const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
+            const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
+
+            if (hasUtmParams) {
+                this.debugLog('New touch: UTM parameters');
                 storedData.lastInteraction = {
                     ...currentData,
+                    landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                    referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
+                };
+            } else if (hasExternalReferrer) {
+                this.debugLog('New touch: External referrer', { referrer: currentReferrer });
+                storedData.lastInteraction = {
+                    ...currentData,
+                    landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                    referrer: currentReferrer
+                };
+            } else {
+                this.debugLog('New touch: Direct visit');
+                storedData.lastInteraction = {
+                    ...currentData,
+                    landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                    referrer: '(direct)',
                     source: '(direct)',
                     medium: '(none)',
                     campaign: '',
@@ -140,6 +116,10 @@ class MarketingTracker {
                     gclid: ''
                 };
             }
+
+            // Store the referrer for this touch
+            sessionStorage.setItem(this.SESSION_REFERRER_KEY, currentReferrer || '(direct)');
+            localStorage.setItem(this.BACKUP_REFERRER_KEY, currentReferrer || '(direct)');
         }
 
         // Always increment visit count
