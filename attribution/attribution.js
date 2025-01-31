@@ -76,36 +76,39 @@ class MarketingTracker {
             sessionStorage.setItem(this.SESSION_REFERRER_KEY, localStorage.getItem(this.BACKUP_REFERRER_KEY));
         }
 
-        // Always create new tracking data for last touch attribution
+        // Always create new tracking data
         const currentData = this.createTrackingData();
         
-        // Only update if we have meaningful attribution data
+        // Check for attribution sources
         const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
         const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
+        const isDirect = !hasUtmParams && !currentReferrer;
 
-        if (hasUtmParams || hasExternalReferrer) {
-            this.debugLog('Updating attribution data due to:', {
-                hasUtmParams,
-                hasExternalReferrer,
-                currentReferrer
-            });
-
-            storedData.lastInteraction = {
-                ...currentData,
-                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
-            };
-        } else if (!storedData.lastInteraction) {
-            // Initialize with current data if no previous data exists
-            this.debugLog('Initializing first attribution data');
-            storedData.lastInteraction = {
-                ...currentData,
-                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
-            };
+        // Always update attribution data with current visit information
+        if (hasUtmParams) {
+            this.debugLog('Updating attribution: UTM parameters detected');
+        } else if (hasExternalReferrer) {
+            this.debugLog('Updating attribution: External referrer detected', { referrer: currentReferrer });
+        } else if (isDirect) {
+            this.debugLog('Updating attribution: Direct visit');
         } else {
-            this.debugLog('No new attribution data to update');
+            this.debugLog('Updating attribution: Internal navigation');
         }
+
+        storedData.lastInteraction = {
+            ...currentData,
+            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+            referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)',
+            source: hasUtmParams ? currentData.source : 
+                   hasExternalReferrer ? currentData.source : 
+                   '(direct)',
+            medium: hasUtmParams ? currentData.medium : 
+                   hasExternalReferrer ? currentData.medium : 
+                   '(none)',
+            campaign: hasUtmParams ? currentData.campaign : '',
+            term: hasUtmParams ? currentData.term : '',
+            gclid: hasUtmParams ? currentData.gclid : ''
+        };
 
         // Always increment visit count
         storedData.visitCount = (storedData.visitCount || 0) + 1;
