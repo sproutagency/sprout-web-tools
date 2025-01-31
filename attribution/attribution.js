@@ -215,8 +215,8 @@ class MarketingTracker {
             medium: medium || '(none)',    // Ensure we never have null medium
             campaign: campaign || '',
             term: params.get('utm_term') || '',
-            landing_page: window.location.pathname,
-            referrer: referrer || '(direct)',
+            landing_page: window.location.pathname,  // Always use current page as landing for new touch
+            referrer: referrer || '(direct)',       // Always use current referrer for new touch
             gclid: gclid || '',
             device: this.getDeviceType()
         };
