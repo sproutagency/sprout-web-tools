@@ -83,32 +83,55 @@ class MarketingTracker {
         const hasUtmParams = Array.from(params.keys()).some(key => key.startsWith('utm_') || key === 'gclid');
         const hasExternalReferrer = currentReferrer && !this.isInternalReferrer(currentReferrer);
         const isDirect = !hasUtmParams && !currentReferrer;
+        const isInternalNavigation = currentReferrer && this.isInternalReferrer(currentReferrer);
 
-        // Always update attribution data with current visit information
+        // Update attribution data based on visit type
         if (hasUtmParams) {
             this.debugLog('Updating attribution: UTM parameters detected');
+            storedData.lastInteraction = {
+                ...currentData,
+                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
+            };
         } else if (hasExternalReferrer) {
             this.debugLog('Updating attribution: External referrer detected', { referrer: currentReferrer });
-        } else if (isDirect) {
+            storedData.lastInteraction = {
+                ...currentData,
+                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)'
+            };
+        } else if (isDirect && !isInternalNavigation) {
             this.debugLog('Updating attribution: Direct visit');
-        } else {
-            this.debugLog('Updating attribution: Internal navigation');
+            storedData.lastInteraction = {
+                ...currentData,
+                landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
+                referrer: '(direct)',
+                source: '(direct)',
+                medium: '(none)',
+                campaign: '',
+                term: '',
+                gclid: ''
+            };
+        } else if (isInternalNavigation) {
+            this.debugLog('Preserving attribution: Internal navigation');
+            // Keep existing attribution data, just update the conversion page
+            if (storedData.lastInteraction) {
+                storedData.lastInteraction = {
+                    ...storedData.lastInteraction,
+                    conversion_page: window.location.pathname
+                };
+            } else {
+                // If no existing data (shouldn't happen), initialize as direct
+                storedData.lastInteraction = {
+                    ...currentData,
+                    source: '(direct)',
+                    medium: '(none)',
+                    campaign: '',
+                    term: '',
+                    gclid: ''
+                };
+            }
         }
-
-        storedData.lastInteraction = {
-            ...currentData,
-            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY),
-            referrer: sessionStorage.getItem(this.SESSION_REFERRER_KEY) || '(direct)',
-            source: hasUtmParams ? currentData.source : 
-                   hasExternalReferrer ? currentData.source : 
-                   '(direct)',
-            medium: hasUtmParams ? currentData.medium : 
-                   hasExternalReferrer ? currentData.medium : 
-                   '(none)',
-            campaign: hasUtmParams ? currentData.campaign : '',
-            term: hasUtmParams ? currentData.term : '',
-            gclid: hasUtmParams ? currentData.gclid : ''
-        };
 
         // Always increment visit count
         storedData.visitCount = (storedData.visitCount || 0) + 1;
