@@ -5,10 +5,10 @@
 class MarketingTracker {
     constructor() {
         this.STORAGE_KEY = 'marketing_data';
+        this.SESSION_LANDING_KEY = 'session_landing_page';
         this.initializeTracking();
     }
 
-    // Standardized values mapping
     STANDARD_MEDIUMS = {
         'cpc': 'cpc',
         'ppc': 'cpc',
@@ -26,7 +26,8 @@ class MarketingTracker {
         'facebook': 'facebook',
         'instagram': 'instagram',
         'linkedin': 'linkedin',
-        'twitter': 'twitter',
+        'x': 'x',
+        'youtube': 'youtube',
         'tiktok': 'tiktok',
         'bing': 'bing',
         'direct': '(direct)'
@@ -36,7 +37,14 @@ class MarketingTracker {
         const currentData = this.createTrackingData();
         const storedData = this.getStoredData();
         
-        storedData.lastInteraction = currentData;
+        if (!sessionStorage.getItem(this.SESSION_LANDING_KEY)) {
+            sessionStorage.setItem(this.SESSION_LANDING_KEY, window.location.pathname);
+        }
+        
+        storedData.lastInteraction = {
+            ...currentData,
+            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY)
+        };
         storedData.visitCount = (storedData.visitCount || 0) + 1;
         
         this.storeData(storedData);
@@ -50,9 +58,11 @@ class MarketingTracker {
             timestamp: new Date().toISOString(),
             source: this.determineSource(params, referrer),
             medium: this.determineMedium(params, referrer),
-            campaign: params.get('utm_campaign'),
+            campaign: params.get('utm_campaign')?.toLowerCase() === 'lsa' 
+                    ? 'lsa' 
+                    : params.get('utm_campaign'),
             term: params.get('utm_term'),
-            landing_page: window.location.pathname,
+            landing_page: sessionStorage.getItem(this.SESSION_LANDING_KEY) || window.location.pathname,
             referrer: referrer || '(direct)',
             gclid: params.get('gclid'),
             device: this.getDeviceType()
@@ -60,24 +70,31 @@ class MarketingTracker {
     }
 
     determineSource(params, referrer) {
-        // Priority 1: UTM Source
         if (params.get('utm_source')) {
             return this.sanitizeValue(params.get('utm_source'), this.STANDARD_SOURCES);
         }
 
-        // Priority 2: Referrer analysis
+        if (params.get('gclid') || params.get('utm_campaign')?.toLowerCase() === 'lsa') {
+            return 'google';
+        }
+
+        if (referrer && referrer.includes('localservices')) {
+            return 'google';
+        }
+
         try {
             if (referrer) {
                 const referrerUrl = new URL(referrer);
                 const domain = referrerUrl.hostname.replace('www.', '');
 
-                // Detect social/special sources
                 const socialMap = {
                     'facebook.com': 'facebook',
                     'instagram.com': 'instagram',
                     'linkedin.com': 'linkedin',
-                    'twitter.com': 'twitter',
-                    'x.com': 'twitter',
+                    'twitter.com': 'x',
+                    'x.com': 'x',
+                    'youtube.com': 'youtube',
+                    'youtu.be': 'youtube',
                     'tiktok.com': 'tiktok'
                 };
 
@@ -91,20 +108,23 @@ class MarketingTracker {
     }
 
     determineMedium(params, referrer) {
-        // Priority 1: UTM Medium
+        if (params.get('utm_campaign')?.toLowerCase() === 'lsa') {
+            return 'cpc';
+        }
+
         if (params.get('utm_medium')) {
             return this.sanitizeValue(params.get('utm_medium'), this.STANDARD_MEDIUMS);
         }
 
-        // Priority 2: gclid detection
         if (params.get('gclid')) return 'cpc';
 
-        // Priority 3: Referrer analysis
         if (referrer) {
             try {
                 const referrerUrl = new URL(referrer);
                 if (referrerUrl.hostname.includes('google')) return 'organic';
                 if (referrerUrl.hostname.includes('facebook')) return 'social';
+                if (referrerUrl.hostname.includes('youtube')) return 'social';
+                if (referrerUrl.hostname.includes('x.com')) return 'social';
                 return 'referral';
             } catch (e) {
                 console.error('Error parsing referrer:', e);
@@ -160,10 +180,8 @@ class MarketingTracker {
     }
 }
 
-// Initialize global instance
 window.marketingTracker = new MarketingTracker();
 
-// Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = MarketingTracker;
 }
