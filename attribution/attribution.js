@@ -1,6 +1,6 @@
 /**
- * Marketing Attribution Tracker
- * Core website attribution tracking for form submissions
+ * Sprout Marketing Attribution Tracker
+ * Core website attribution tracking for form submissions 
  */
 class MarketingTracker {
     constructor() {
