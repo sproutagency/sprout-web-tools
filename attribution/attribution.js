@@ -5,7 +5,6 @@
 class MarketingTracker {
     constructor() {
         this.STORAGE_KEY = 'marketing_data';
-        this.SESSION_LANDING_KEY = 'session_landing_page';
         this.SESSION_REFERRER_KEY = 'session_referrer';
         this.BACKUP_REFERRER_KEY = 'original_referrer';
         this.DEBUG = true; // Set to true to enable debug logging
@@ -64,8 +63,12 @@ class MarketingTracker {
         const currentReferrer = document.referrer;
         const isInternalNavigation = currentReferrer && this.isInternalReferrer(currentReferrer);
         
-        // Always create new tracking data
-        const currentData = this.createTrackingData();
+        // Always create new tracking data with current page
+        const currentData = {
+            ...this.createTrackingData(),
+            landing_page: window.location.pathname,    // Explicitly set current page
+            conversion_page: window.location.pathname  // Start with current page
+        };
         
         // If it's internal navigation, just update the conversion page
         if (isInternalNavigation) {
@@ -80,14 +83,7 @@ class MarketingTracker {
         // Otherwise, it's a new touch - update all attribution data
         else {
             this.debugLog('New touch - updating all attribution data');
-            // Remove any session storage to ensure fresh landing page
-            sessionStorage.removeItem(this.SESSION_LANDING_KEY);
-            // Update all data for new touch
-            storedData.lastInteraction = {
-                ...currentData,
-                landing_page: window.location.pathname,  // Ensure landing page is current page for new touch
-                conversion_page: window.location.pathname
-            };
+            storedData.lastInteraction = currentData;  // Use currentData which has current page
         }
 
         // Always increment visit count
@@ -177,20 +173,16 @@ class MarketingTracker {
             this.debugLog('Source/Medium: Direct visit');
         }
         
-        const data = {
+        return {
             timestamp: new Date().toISOString(),
             source: source || '(direct)',
             medium: medium || '(none)',
             campaign: campaign || '',
             term: params.get('utm_term') || '',
-            landing_page: window.location.pathname,
             referrer: referrer || '(direct)',  // Store actual HTTP referrer for context
             gclid: gclid || '',
             device: this.getDeviceType()
         };
-
-        this.debugLog('Created tracking data:', data);
-        return data;
     }
 
     determineReferrer(parsedReferrer) {
