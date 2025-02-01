@@ -1,0 +1,66 @@
+<script>
+    // Observer for date changes only
+    const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.target.getAttribute('data-cy') === 'date-picker-component') {
+                const dateInput = document.querySelector('[data-cy="date-picker-component"][aria-label="When did the incident occur?"]');
+                if (dateInput && dateInput.value) {
+                    // Update URL parameter for date only
+                    const url = new URL(window.location);
+                    url.searchParams.set('formatted_date', dateInput.value);
+                    window.history.replaceState({}, '', url);
+                }
+            }
+        });
+    });
+    
+    // Format timestamp in US format
+    function formatTimestamp(date) {
+        return date.toLocaleString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    }
+    
+    // Initialize once the date input and submit button are available
+    function initialize() {
+        const dateInput = document.querySelector('[data-cy="date-picker-component"][aria-label="When did the incident occur?"]');
+        const submitButton = document.querySelector('[data-cy="button-component"][type="button"]');
+        
+        if (dateInput && submitButton) {
+            // Set initial URL parameter if date exists
+            if (dateInput.value) {
+                const url = new URL(window.location);
+                url.searchParams.set('formatted_date', dateInput.value);
+                window.history.replaceState({}, '', url);
+            }
+            
+            // Observe date changes
+            observer.observe(dateInput, { 
+                attributes: true, 
+                attributeFilter: ['value'] 
+            });
+    
+            // Add click listener for submit button
+            submitButton.addEventListener('click', function() {
+                console.log('Submit button clicked, setting submission time');
+                const url = new URL(window.location);
+                const timestamp = formatTimestamp(new Date());
+                url.searchParams.set('submission_time', timestamp);
+                window.history.replaceState({}, '', url);
+                console.log('Submission time set to:', timestamp);
+            });
+    
+            console.log('Form observers initialized');
+        } else {
+            setTimeout(initialize, 1000);
+        }
+    }
+    
+    // Start initialization
+    initialize();
+    </script>

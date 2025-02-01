@@ -1,0 +1,74 @@
+<script>
+    // First, ensure attribution script is loaded
+    function loadAttributionScript() {
+        return new Promise((resolve, reject) => {
+            if (window.marketingTracker) {
+                resolve();
+                return;
+            }
+
+            // Listen for the ready event
+            window.addEventListener('marketingTrackerReady', () => resolve(), { once: true });
+
+            // Load the script if not already loading
+            if (!document.querySelector('script[src*="attribution.js"]')) {
+                const script = document.createElement('script');
+                script.src = '/attribution/attribution.js';
+                script.onerror = reject;
+                document.head.appendChild(script);
+            }
+
+            // Timeout after 5 seconds
+            setTimeout(() => reject(new Error('Attribution script load timeout')), 5000);
+        });
+    }
+
+    // Create the form div
+    document.currentScript.insertAdjacentHTML('beforebegin', `
+        <div style="width:100%;height:500px;" 
+            data-fillout-id="6TfjFYzgious" 
+            data-fillout-embed-type="standard"
+            data-fillout-inherit-parameters
+            data-fillout-dynamic-resize 
+            data-fillout-domain="forms.sproutagency.co">
+        </div>
+    `);
+
+    // Apply attribution data once available
+    async function applyAttributionData() {
+        try {
+            await loadAttributionScript();
+            
+            const formDiv = document.currentScript.previousElementSibling;
+            const attribution = window.marketingTracker.getFormAttributes();
+            
+            if (attribution) {
+                const attributes = {
+                    'data-source': attribution.source,
+                    'data-medium': attribution.medium,
+                    'data-campaign': attribution.campaign,
+                    'data-term': attribution.term,
+                    'data-landing_page': attribution.landing_page,
+                    'data-conversion_page': window.location.pathname,
+                    'data-referrer': attribution.referrer,
+                    'data-gclid': attribution.gclid,
+                    'data-device': attribution.device,
+                    'data-visit_count': attribution.visit_count
+                };
+
+                Object.entries(attributes).forEach(([attr, value]) => {
+                    formDiv.setAttribute(attr, value || '');
+                    console.log(`Setting ${attr}:`, value || '(empty)');
+                });
+
+                console.log('Attribution data applied successfully');
+            }
+        } catch (error) {
+            console.error('Error applying attribution data:', error);
+        }
+    }
+
+    // Start the process
+    applyAttributionData();
+</script>
+<script src="https://server.fillout.com/embed/v1/"></script>
